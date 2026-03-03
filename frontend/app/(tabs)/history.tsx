@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -13,7 +13,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Radius, Spacing, Typography } from '../../constants/theme';
 import { useToast } from '../../hooks/useToast';
 import { listTickets, type TicketListItem } from '../../services/api';
-import { getDeviceId } from '../../utils/deviceId';
 
 const NOTIFIED_KEY = '@fourdtoto/notified_tickets';
 
@@ -23,28 +22,18 @@ type Sort = (typeof SORTS)[number];
 type Filter = (typeof FILTERS)[number];
 
 function StatusChip({ item }: { item: TicketListItem }) {
-  let label = 'Pending';
-  let bg = Colors.border;
-  let fg = Colors.textSecondary;
+  let label: string = 'Pending';
+  let bg: string = Colors.border;
+  let fg: string = Colors.textSecondary;
 
-  if (item.status === 'ocr_failed') {
-    label = 'Failed';
-    bg = Colors.errorBg;
-    fg = Colors.error;
-  } else if (item.status === 'processing') {
-    label = 'Processing';
-    bg = Colors.infoBg;
-    fg = Colors.info;
-  } else if (item.status === 'checked') {
-    if (item.is_winner) {
-      label = `Won! (${item.prize_tier ?? ''})`;
-      bg = Colors.winBg;
-      fg = Colors.win;
-    } else {
-      label = 'No Prize';
-      bg = Colors.surfaceAlt;
-      fg = Colors.textSecondary;
-    }
+  if (item.status === 'WON') {
+    label = `Won${item.prize_tier ? ` (${item.prize_tier})` : ''}`;
+    bg = Colors.winBg;
+    fg = Colors.win;
+  } else if (item.status === 'LOST') {
+    label = 'No Prize';
+    bg = Colors.surfaceAlt;
+    fg = Colors.textSecondary;
   }
 
   return (
@@ -75,15 +64,16 @@ function TicketCard({
         </View>
         <View style={styles.cardInfo}>
           <Text style={styles.cardDate}>Draw: {drawDate}</Text>
-          {item.bet_type && (
-            <Text style={styles.cardBetType}>{item.bet_type}</Text>
+          <Text style={styles.cardMeta}>Total: ${item.total_price}</Text>
+          {item.bet_label && (
+            <Text style={styles.cardBetType}>{item.bet_label}</Text>
           )}
         </View>
         <StatusChip item={item} />
       </View>
-      {item.is_winner && item.prize_tier && (
+      {item.status === 'WON' && item.prize_tier && (
         <View style={styles.winBanner}>
-          <Text style={styles.winBannerText}>🎉 {item.prize_tier}</Text>
+          <Text style={styles.winBannerText}>Prize: {item.prize_tier}</Text>
         </View>
       )}
     </TouchableOpacity>
@@ -97,14 +87,11 @@ export default function HistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState<Sort>('newest');
   const [filter, setFilter] = useState<Filter>('all');
-  const deviceIdRef = useRef('');
 
   async function loadTickets(s: Sort = sort, f: Filter = filter) {
     setLoading(true);
     try {
-      const id = deviceIdRef.current || (await getDeviceId());
-      deviceIdRef.current = id;
-      const items = await listTickets(id, {
+      const items = await listTickets({
         sort: s,
         filter: f === 'all' ? undefined : f,
       });
@@ -122,18 +109,18 @@ export default function HistoryScreen() {
     const notifiedIds: string[] = stored ? JSON.parse(stored) : [];
 
     const newWins = items.filter(
-      (t) => t.status === 'checked' && t.is_winner === true && !notifiedIds.includes(t.id),
+      (t) => t.status === 'WON' && !notifiedIds.includes(t.id),
     );
     const newLosses = items.filter(
-      (t) => t.status === 'checked' && t.is_winner === false && !notifiedIds.includes(t.id),
+      (t) => t.status === 'LOST' && !notifiedIds.includes(t.id),
     );
 
     for (const t of newWins) {
-      showToast(`You won! ${t.prize_tier} on your ${t.game_type} ticket 🎉`, 'win');
+      showToast(`You won! ${t.prize_tier ?? ''} on your ${t.game_type} ticket`, 'win');
       notifiedIds.push(t.id);
     }
     if (newWins.length === 0 && newLosses.length > 0) {
-      showToast(`${newLosses.length} ticket(s) checked — no prize this time.`, 'loss');
+      showToast(`${newLosses.length} ticket(s) resolved with no prize.`, 'loss');
       newLosses.forEach((t) => notifiedIds.push(t.id));
     }
 
@@ -160,7 +147,6 @@ export default function HistoryScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Sort bar */}
       <View style={styles.controlBar}>
         <Text style={styles.controlLabel}>Sort:</Text>
         {SORTS.map((s) => (
@@ -176,7 +162,6 @@ export default function HistoryScreen() {
         ))}
       </View>
 
-      {/* Filter bar */}
       <View style={styles.controlBar}>
         <Text style={styles.controlLabel}>Filter:</Text>
         {FILTERS.map((f) => (
@@ -196,8 +181,8 @@ export default function HistoryScreen() {
         <ActivityIndicator style={styles.loader} size="large" color={Colors.primary} />
       ) : tickets.length === 0 ? (
         <View style={styles.empty}>
-          <Text style={styles.emptyIcon}>📋</Text>
-          <Text style={styles.emptyText}>No tickets yet. Upload one from the Home tab!</Text>
+          <Text style={styles.emptyIcon}>No tickets</Text>
+          <Text style={styles.emptyText}>Upload one from the Home tab.</Text>
         </View>
       ) : (
         <FlatList
@@ -270,6 +255,7 @@ const styles = StyleSheet.create({
   badgeText: { color: '#fff', fontWeight: '800', fontSize: Typography.sm },
   cardInfo: { flex: 1 },
   cardDate: { fontSize: Typography.base, fontWeight: '600', color: Colors.text },
+  cardMeta: { fontSize: Typography.xs, color: Colors.textSecondary, marginTop: 2 },
   cardBetType: { fontSize: Typography.xs, color: Colors.textSecondary, marginTop: 2 },
   chip: {
     paddingHorizontal: 8,
@@ -293,7 +279,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: Spacing.xl,
   },
-  emptyIcon: { fontSize: 48, marginBottom: Spacing.md },
+  emptyIcon: { fontSize: 28, marginBottom: Spacing.md, color: Colors.textSecondary },
   emptyText: {
     fontSize: Typography.base,
     color: Colors.textSecondary,

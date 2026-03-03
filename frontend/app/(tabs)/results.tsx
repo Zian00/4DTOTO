@@ -38,7 +38,7 @@ function FourDCard({ result }: { result: DrawResultResponse }) {
         </View>
         <View>
           <Text style={styles.drawDate}>{formatDrawDate(result.draw_date)}</Text>
-          {wn.draw_no && (
+          {wn.draw_no !== undefined && wn.draw_no !== null && (
             <Text style={styles.drawNo}>Draw #{String(wn.draw_no)}</Text>
           )}
         </View>
@@ -82,7 +82,7 @@ function TotoCard({ result }: { result: DrawResultResponse }) {
         </View>
         <View>
           <Text style={styles.drawDate}>{formatDrawDate(result.draw_date)}</Text>
-          {wn.draw_no && (
+          {wn.draw_no !== undefined && wn.draw_no !== null && (
             <Text style={styles.drawNo}>Draw #{String(wn.draw_no)}</Text>
           )}
         </View>

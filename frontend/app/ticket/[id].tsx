@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,18 +12,21 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { Colors, Radius, Spacing, Typography } from '../../constants/theme';
 import { useToast } from '../../hooks/useToast';
-import { deleteTicket, getTicket, imageUrl, type TicketDetail } from '../../services/api';
+import { deleteTicket, getTicket, type TicketDetail } from '../../services/api';
 
-function StatusBadge({ status, isWinner }: { status: string; isWinner?: boolean }) {
-  let label = 'Pending';
-  let bg = Colors.border;
-  let fg = Colors.textSecondary;
+function StatusBadge({ status }: { status: 'PENDING' | 'WON' | 'LOST' }) {
+  let label: string = 'Pending';
+  let bg: string = Colors.border;
+  let fg: string = Colors.textSecondary;
 
-  if (status === 'ocr_failed') { label = 'OCR Failed'; bg = Colors.errorBg; fg = Colors.error; }
-  else if (status === 'processing') { label = 'Processing'; bg = Colors.infoBg; fg = Colors.info; }
-  else if (status === 'checked') {
-    if (isWinner) { label = 'Winner!'; bg = Colors.winBg; fg = Colors.win; }
-    else { label = 'No Prize'; bg = Colors.surfaceAlt; fg = Colors.textSecondary; }
+  if (status === 'WON') {
+    label = 'Winner';
+    bg = Colors.winBg;
+    fg = Colors.win;
+  } else if (status === 'LOST') {
+    label = 'No Prize';
+    bg = Colors.surfaceAlt;
+    fg = Colors.textSecondary;
   }
 
   return (
@@ -85,7 +87,6 @@ export default function TicketDetailScreen() {
     );
   }
 
-  const isWinner = ticket.results.some((r) => r.is_winner);
   const drawDate = new Date(ticket.draw_date).toLocaleDateString('en-SG', {
     weekday: 'long',
     day: '2-digit',
@@ -95,14 +96,6 @@ export default function TicketDetailScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Ticket image */}
-      <Image
-        source={{ uri: imageUrl(ticket.image_path) }}
-        style={styles.ticketImage}
-        resizeMode="contain"
-      />
-
-      {/* Header info */}
       <View style={styles.infoCard}>
         <View style={styles.infoRow}>
           <View style={[styles.gameTag, {
@@ -110,113 +103,70 @@ export default function TicketDetailScreen() {
           }]}>
             <Text style={styles.gameTagText}>{ticket.game_type}</Text>
           </View>
-          <StatusBadge status={ticket.status} isWinner={isWinner} />
+          <StatusBadge status={ticket.status} />
         </View>
 
         <View style={styles.infoGrid}>
           <InfoField label="Draw Date" value={drawDate} />
-          {ticket.bet_type && <InfoField label="Bet Type" value={ticket.bet_type} />}
+          {ticket.bet_label && <InfoField label="Bet Type" value={ticket.bet_label} />}
+          <InfoField label="Total Price" value={`$${ticket.total_price}`} />
           <InfoField
             label="Uploaded"
-            value={new Date(ticket.purchase_date).toLocaleString('en-SG')}
+            value={new Date(ticket.purchase_datetime).toLocaleString('en-SG')}
           />
         </View>
       </View>
 
-      {/* OCR raw numbers */}
-      {Array.isArray(ticket.numbers) && (ticket.numbers as unknown[]).length > 0 && (
-        <Section title="Extracted Numbers (OCR)">
-          <View style={styles.ocrNums}>
-            {(ticket.numbers as string[][]).map((numSet, i) => (
-              <View key={i} style={styles.ocrSet}>
-                {numSet.map((n, j) => (
-                  <Text key={j} style={styles.ocrNum}>{n}</Text>
-                ))}
-              </View>
+      {ticket.four_d_ticket && (
+        <Section title="4D Details">
+          <InfoField label="Number" value={ticket.four_d_ticket.number} />
+          <InfoField label="Bet" value={ticket.four_d_ticket.bet_type} />
+          <InfoField label="Big" value={`$${ticket.four_d_ticket.big_amount}`} />
+          <InfoField label="Small" value={`$${ticket.four_d_ticket.small_amount}`} />
+        </Section>
+      )}
+
+      {ticket.game_type === 'TOTO' && (
+        <Section title="TOTO Details">
+          <InfoField
+            label="System"
+            value={ticket.toto_ticket?.is_system ? (ticket.toto_ticket.system_type ?? 'SYSTEM') : 'STANDARD'}
+          />
+          <Text style={styles.sectionSubTitle}>Selected Numbers</Text>
+          <View style={styles.numberRow}>
+            {ticket.toto_numbers.map((n) => (
+              <Text key={n} style={styles.numberPill}>{n}</Text>
             ))}
           </View>
         </Section>
       )}
 
-      {/* OCR failed message */}
-      {ticket.status === 'ocr_failed' && (
-        <View style={styles.ocrFailedBox}>
-          <Text style={styles.ocrFailedTitle}>⚠️ OCR Failed</Text>
-          <Text style={styles.ocrFailedText}>
-            Could not read this ticket. Please retake the photo with better lighting.
-          </Text>
-          {ticket.raw_ocr_text && (
-            <Text style={styles.ocrRaw} numberOfLines={3}>
-              Raw: {ticket.raw_ocr_text}
+      {ticket.toto_expanded_combinations.length > 0 && (
+        <Section title={`Expanded Combinations (${ticket.toto_expanded_combinations.length})`}>
+          {ticket.toto_expanded_combinations.slice(0, 30).map((c) => (
+            <Text key={c} style={styles.comboText}>{c}</Text>
+          ))}
+          {ticket.toto_expanded_combinations.length > 30 && (
+            <Text style={styles.moreText}>
+              ...and {ticket.toto_expanded_combinations.length - 30} more
             </Text>
           )}
-        </View>
-      )}
-
-      {/* Results */}
-      {ticket.results.length > 0 && (
-        <Section title="Results">
-          {ticket.results.map((result) => {
-            const combo = ticket.combinations.find((c) => c.id === result.combination_id);
-            return (
-              <View
-                key={result.id}
-                style={[styles.resultRow, result.is_winner && styles.resultRowWin]}
-              >
-                <View style={styles.resultLeft}>
-                  {combo && (
-                    <Text style={styles.comboText}>
-                      {ticket.game_type === 'TOTO'
-                        ? combo.combination.split(',').join('  ')
-                        : combo.combination}
-                    </Text>
-                  )}
-                  {combo?.is_system_expanded && (
-                    <Text style={styles.systemTag}>System expanded</Text>
-                  )}
-                </View>
-                <View style={styles.resultRight}>
-                  {result.is_winner ? (
-                    <View style={styles.winPill}>
-                      <Text style={styles.winPillText}>🎉 {result.prize_tier}</Text>
-                    </View>
-                  ) : (
-                    <Text style={styles.noPrize}>No prize</Text>
-                  )}
-                </View>
-              </View>
-            );
-          })}
         </Section>
       )}
 
-      {/* Combinations (system bets with no results yet) */}
-      {ticket.results.length === 0 && ticket.combinations.length > 0 && (
-        <Section title={`Combinations (${ticket.combinations.length})`}>
-          <Text style={styles.pendingNote}>
-            Results will appear here after the draw is checked.
-          </Text>
-          {ticket.combinations.slice(0, 20).map((c) => (
-            <View key={c.id} style={styles.comboRow}>
-              <Text style={styles.comboText}>
-                {ticket.game_type === 'TOTO'
-                  ? c.combination.split(',').join('  ')
-                  : c.combination}
+      {ticket.notifications.length > 0 && (
+        <Section title="Notifications">
+          {ticket.notifications.map((n) => (
+            <View key={n.id} style={styles.notificationRow}>
+              <Text style={styles.notificationText}>{n.message}</Text>
+              <Text style={styles.notificationDate}>
+                {new Date(n.created_at).toLocaleString('en-SG')}
               </Text>
-              {c.is_system_expanded && (
-                <Text style={styles.systemTag}>expanded</Text>
-              )}
             </View>
           ))}
-          {ticket.combinations.length > 20 && (
-            <Text style={styles.moreText}>
-              … and {ticket.combinations.length - 20} more combinations
-            </Text>
-          )}
         </Section>
       )}
 
-      {/* Delete button */}
       <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
         <Text style={styles.deleteBtnText}>Delete Ticket</Text>
       </TouchableOpacity>
@@ -252,15 +202,6 @@ const styles = StyleSheet.create({
     padding: Spacing.xl,
   },
   errorText: { fontSize: Typography.base, color: Colors.textSecondary },
-  ticketImage: {
-    width: '100%',
-    height: 220,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.surface,
-    marginBottom: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
   infoCard: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.md,
@@ -309,97 +250,53 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginBottom: Spacing.sm,
   },
-  ocrNums: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-  ocrSet: {
+  sectionSubTitle: {
+    fontSize: Typography.sm,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.xs,
+  },
+  numberRow: {
     flexDirection: 'row',
-    gap: 4,
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
+  },
+  numberPill: {
     backgroundColor: Colors.surfaceAlt,
-    borderRadius: Radius.sm,
-    padding: Spacing.sm,
     borderWidth: 1,
     borderColor: Colors.border,
-  },
-  ocrNum: {
-    fontSize: Typography.base,
-    fontWeight: '700',
-    color: Colors.primary,
-    fontFamily: 'monospace',
-  },
-  ocrFailedBox: {
-    backgroundColor: Colors.errorBg,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.error,
-    marginBottom: Spacing.md,
-  },
-  ocrFailedTitle: {
-    fontSize: Typography.base,
-    fontWeight: '700',
-    color: Colors.error,
-    marginBottom: 6,
-  },
-  ocrFailedText: {
-    fontSize: Typography.sm,
-    color: Colors.text,
-    lineHeight: 20,
-    marginBottom: 6,
-  },
-  ocrRaw: {
-    fontSize: Typography.xs,
-    color: Colors.textSecondary,
-    fontFamily: 'monospace',
-  },
-  resultRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  resultRowWin: { backgroundColor: Colors.winBg, marginHorizontal: -Spacing.sm, paddingHorizontal: Spacing.sm },
-  resultLeft: { flex: 1 },
-  resultRight: {},
-  comboRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  comboText: {
-    fontSize: Typography.base,
-    fontFamily: 'monospace',
-    color: Colors.text,
-    fontWeight: '600',
-  },
-  systemTag: {
-    fontSize: Typography.xs,
-    color: Colors.textSecondary,
-    fontStyle: 'italic',
-    marginTop: 2,
-  },
-  winPill: {
-    backgroundColor: Colors.win,
+    borderRadius: Radius.full,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: Radius.full,
-  },
-  winPillText: { color: '#fff', fontSize: Typography.xs, fontWeight: '700' },
-  noPrize: { fontSize: Typography.xs, color: Colors.textSecondary },
-  pendingNote: {
     fontSize: Typography.sm,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.sm,
-    fontStyle: 'italic',
+    color: Colors.text,
+    fontWeight: '700',
+  },
+  comboText: {
+    fontSize: Typography.sm,
+    color: Colors.text,
+    fontFamily: 'monospace',
+    paddingVertical: 3,
   },
   moreText: {
     fontSize: Typography.xs,
     color: Colors.textSecondary,
-    textAlign: 'center',
-    padding: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  notificationRow: {
+    paddingVertical: Spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  notificationText: {
+    fontSize: Typography.sm,
+    color: Colors.text,
+  },
+  notificationDate: {
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    marginTop: 2,
   },
   deleteBtn: {
     backgroundColor: Colors.error,

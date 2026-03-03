@@ -1,35 +1,19 @@
 """
 Win/loss comparison logic for 4D and TOTO tickets.
-
-4D Prize Tiers:
-  1st Prize      — exact match with the 1st prize number
-  2nd Prize      — exact match with the 2nd prize number
-  3rd Prize      — exact match with the 3rd prize number
-  Starter Prize  — match with any of the 10 starter numbers
-  Consolation    — match with any of the 10 consolation numbers
-
-TOTO Prize Groups:
-  Group 1 — 6 winning numbers matched
-  Group 2 — 5 winning + additional number matched
-  Group 3 — 5 winning numbers matched
-  Group 4 — 4 winning + additional number matched
-  Group 5 — 4 winning numbers matched
-  Group 6 — 3 winning + additional number matched
-  Group 7 — 3 winning numbers matched
 """
 
 from datetime import date
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from models import Ticket, TicketCombination, TicketResult
+from models import Notification, Ticket, TicketStatus
 from services.scraper import scrape_results
 
 
 async def handle_ticket_after_ocr(ticket_id: str, db: AsyncSession) -> None:
     """
-    Called immediately after OCR succeeds.
     Decides whether to check now (past draw) or schedule polling (future draw).
     """
     ticket = await db.get(Ticket, ticket_id)
@@ -37,99 +21,133 @@ async def handle_ticket_after_ocr(ticket_id: str, db: AsyncSession) -> None:
         return
 
     if ticket.draw_date > date.today():
-        # Case A: future draw — register a polling job
         from services.scheduler import schedule_poll
+
         schedule_poll(str(ticket.id), ticket.draw_date)
     else:
-        # Case B: past draw — scrape and compare immediately
         await check_ticket(ticket, db)
 
 
 async def check_ticket(ticket: Ticket, db: AsyncSession) -> None:
-    """Scrape results for the ticket's draw date and compare all combinations."""
-    results = await scrape_results(ticket.game_type, str(ticket.draw_date), db)
-    if not results:
-        return  # results not available yet — scheduler will retry
-
-    # Load combinations
-    stmt = select(TicketCombination).where(TicketCombination.ticket_id == ticket.id)
-    combos = (await db.execute(stmt)).scalars().all()
-
-    if not combos:
+    """
+    Scrape results for the ticket's draw date and set status to WON/LOST.
+    A notification row is written whenever a ticket is resolved.
+    """
+    if ticket.status != TicketStatus.PENDING:
         return
 
-    if ticket.game_type == "4D":
-        result_rows = _check_4d(ticket, combos, results)
+    stmt = (
+        select(Ticket)
+        .options(
+            selectinload(Ticket.four_d_ticket),
+            selectinload(Ticket.toto_numbers),
+            selectinload(Ticket.toto_expanded_combinations),
+        )
+        .where(Ticket.id == ticket.id)
+    )
+    loaded_ticket = (await db.execute(stmt)).scalar_one_or_none()
+    if not loaded_ticket:
+        return
+
+    results = await scrape_results(loaded_ticket.game_type.value, str(loaded_ticket.draw_date), db)
+    if not results:
+        return
+
+    prize_tier: str | None = None
+    if loaded_ticket.game_type.value == "4D":
+        if not loaded_ticket.four_d_ticket:
+            return
+        prize_tier = _check_4d(loaded_ticket.four_d_ticket.number, results)
     else:
-        result_rows = _check_toto(ticket, combos, results)
+        combinations = [row.combination for row in loaded_ticket.toto_expanded_combinations]
+        if not combinations and loaded_ticket.toto_numbers:
+            sorted_numbers = sorted(n.number for n in loaded_ticket.toto_numbers)
+            combinations = [",".join(str(n) for n in sorted_numbers)]
+        prize_tier = _check_toto(combinations, results)
 
-    for row in result_rows:
-        db.add(row)
+    loaded_ticket.status = TicketStatus.WON if prize_tier else TicketStatus.LOST
 
-    ticket.status = "checked"
+    if prize_tier:
+        message = (
+            f"Ticket won ({prize_tier}) for {loaded_ticket.game_type.value} draw "
+            f"{loaded_ticket.draw_date.isoformat()}."
+        )
+    else:
+        message = (
+            f"Ticket checked for {loaded_ticket.game_type.value} draw "
+            f"{loaded_ticket.draw_date.isoformat()}: no prize."
+        )
+
+    db.add(Notification(ticket_id=loaded_ticket.id, message=message))
     await db.commit()
 
 
-def _check_4d(
-    ticket: Ticket,
-    combos: list[TicketCombination],
-    results: dict,
-) -> list[TicketResult]:
-    rows = []
-    first = results.get("1st", "")
-    second = results.get("2nd", "")
-    third = results.get("3rd", "")
-    starters = set(results.get("starter", []))
-    consolations = set(results.get("consolation", []))
+def _check_4d(number: str, results: dict) -> str | None:
+    candidate = number.strip()
+    if candidate == str(results.get("1st", "")).strip():
+        return "1st Prize"
+    if candidate == str(results.get("2nd", "")).strip():
+        return "2nd Prize"
+    if candidate == str(results.get("3rd", "")).strip():
+        return "3rd Prize"
 
-    for combo in combos:
-        num = combo.combination.strip()
-        prize_tier = None
+    starters = {str(v).strip() for v in results.get("starter", []) if str(v).strip()}
+    if candidate in starters:
+        return "Starter"
 
-        if num == first:
-            prize_tier = "1st Prize"
-        elif num == second:
-            prize_tier = "2nd Prize"
-        elif num == third:
-            prize_tier = "3rd Prize"
-        elif num in starters:
-            prize_tier = "Starter"
-        elif num in consolations:
-            prize_tier = "Consolation"
+    consolations = {str(v).strip() for v in results.get("consolation", []) if str(v).strip()}
+    if candidate in consolations:
+        return "Consolation"
 
-        rows.append(TicketResult(
-            ticket_id=ticket.id,
-            combination_id=combo.id,
-            is_winner=prize_tier is not None,
-            prize_tier=prize_tier,
-        ))
-    return rows
+    return None
 
 
-def _check_toto(
-    ticket: Ticket,
-    combos: list[TicketCombination],
-    results: dict,
-) -> list[TicketResult]:
-    rows = []
-    winning = set(int(n) for n in results.get("winning_numbers", []))
-    additional = int(results["additional_number"]) if results.get("additional_number") else None
+def _check_toto(combinations: list[str], results: dict) -> str | None:
+    winning = set(_safe_int(v) for v in results.get("winning_numbers", []))
+    winning.discard(None)
 
-    for combo in combos:
-        # combination stored as "1,5,12,23,34,45"
-        selected = set(int(n) for n in combo.combination.split(","))
+    additional_raw = results.get("additional_number")
+    additional = _safe_int(additional_raw)
+
+    if not winning:
+        return None
+
+    best: str | None = None
+    for combination in combinations:
+        values = [_safe_int(v) for v in combination.split(",")]
+        selected = {v for v in values if v is not None}
+        if len(selected) < 6:
+            continue
+
         matched_winning = len(selected & winning)
-        matched_additional = additional in selected if additional else False
+        matched_additional = additional in selected if additional is not None else False
+        tier = _toto_prize_tier(matched_winning, matched_additional)
+        if tier is None:
+            continue
+        if best is None or _tier_rank(tier) < _tier_rank(best):
+            best = tier
 
-        prize_tier = _toto_prize_tier(matched_winning, matched_additional)
+    return best
 
-        rows.append(TicketResult(
-            ticket_id=ticket.id,
-            combination_id=combo.id,
-            is_winner=prize_tier is not None,
-            prize_tier=prize_tier,
-        ))
-    return rows
+
+def _safe_int(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _tier_rank(tier: str) -> int:
+    ranking = {
+        "Group 1": 1,
+        "Group 2": 2,
+        "Group 3": 3,
+        "Group 4": 4,
+        "Group 5": 5,
+        "Group 6": 6,
+        "Group 7": 7,
+    }
+    return ranking.get(tier, 999)
 
 
 def _toto_prize_tier(matched_winning: int, matched_additional: bool) -> str | None:
@@ -160,11 +178,11 @@ async def poll_and_check(ticket_id: str) -> None:
 
     async with AsyncSessionLocal() as db:
         ticket = await db.get(Ticket, ticket_id)
-        if not ticket or ticket.status == "checked":
+        if not ticket or ticket.status != TicketStatus.PENDING:
             remove_poll(ticket_id)
             return
 
-        results = await scrape_results(ticket.game_type, str(ticket.draw_date), db)
+        results = await scrape_results(ticket.game_type.value, str(ticket.draw_date), db)
         if results:
             await check_ticket(ticket, db)
             remove_poll(ticket_id)

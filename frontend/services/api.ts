@@ -43,58 +43,90 @@ function normalizeApiUrl(rawUrl: string): string {
 const RAW_API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
 const API_URL = normalizeApiUrl(RAW_API_URL);
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
 export interface TicketUploadResponse {
   id: string;
-  status: string;
+  status: 'PENDING' | 'WON' | 'LOST';
+  game_type: '4D' | 'TOTO';
+  draw_date: string;
+  purchase_datetime: string;
+  total_price: number | string;
+  bet_label: string | null;
+  numbers: string[];
+  raw_ocr_text?: string | null;
+}
+
+export interface TicketPreviewResponse {
   game_type: string | null;
   draw_date: string | null;
   bet_type: string | null;
   numbers: unknown;
+  raw_ocr_text?: string | null;
+}
+
+export interface TicketConfirmPayload {
+  game_type: string;
+  draw_date: string;
+  bet_type?: string | null;
+  numbers: string[][];
+  big_amount?: string | null;
+  small_amount?: string | null;
+  raw_ocr_text?: string | null;
 }
 
 export interface TicketListItem {
   id: string;
-  game_type: string;
+  game_type: '4D' | 'TOTO';
   draw_date: string;
-  purchase_date: string;
-  bet_type: string | null;
-  status: string;
-  image_path: string;
+  purchase_datetime: string;
+  total_price: number | string;
+  bet_label: string | null;
+  status: 'PENDING' | 'WON' | 'LOST';
   is_winner: boolean | null;
   prize_tier: string | null;
 }
 
-export interface CombinationOut {
-  id: string;
-  combination: string;
-  is_system_expanded: boolean;
+export interface FourDTicketOut {
+  number: string;
+  bet_type: 'ORDINARY' | 'IBET';
+  big_amount: number | string;
+  small_amount: number | string;
 }
 
-export interface TicketResultOut {
+export interface TotoTicketOut {
+  is_system: boolean;
+  system_type:
+    | 'SYSTEM_7'
+    | 'SYSTEM_8'
+    | 'SYSTEM_9'
+    | 'SYSTEM_10'
+    | 'SYSTEM_11'
+    | 'SYSTEM_12'
+    | null;
+}
+
+export interface NotificationOut {
   id: string;
-  combination_id: string | null;
-  is_winner: boolean;
-  prize_tier: string | null;
-  notified: boolean;
-  checked_at: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
 }
 
 export interface TicketDetail {
   id: string;
-  device_id: string;
-  image_path: string;
-  game_type: string;
+  game_type: '4D' | 'TOTO';
+  purchase_datetime: string;
   draw_date: string;
-  purchase_date: string;
-  numbers: unknown;
-  bet_type: string | null;
-  raw_ocr_text: string | null;
-  status: string;
+  total_price: number | string;
+  status: 'PENDING' | 'WON' | 'LOST';
   created_at: string;
-  combinations: CombinationOut[];
-  results: TicketResultOut[];
+  updated_at: string;
+  bet_label: string | null;
+  numbers: string[];
+  four_d_ticket: FourDTicketOut | null;
+  toto_ticket: TotoTicketOut | null;
+  toto_numbers: number[];
+  toto_expanded_combinations: string[];
+  notifications: NotificationOut[];
 }
 
 export interface DrawResultResponse {
@@ -127,22 +159,35 @@ export interface PredictionResponse {
   disclaimer: string;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, init);
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as Record<string, string>;
+    const err = (await res.json().catch(() => ({}))) as Record<string, string>;
     throw new Error(err.detail ?? `Request failed: ${res.status}`);
   }
   return res.json() as Promise<T>;
 }
 
-// ── Tickets ───────────────────────────────────────────────────────────────────
+export async function uploadTicket(imageUri: string): Promise<TicketPreviewResponse> {
+  const formData = new FormData();
 
-export async function uploadTicket(
+  if (Platform.OS === 'web') {
+    const blob = await fetch(imageUri).then((r) => r.blob());
+    formData.append('file', blob, 'ticket.jpg');
+  } else {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (formData as any).append('file', { uri: imageUri, type: 'image/jpeg', name: 'ticket.jpg' });
+  }
+
+  return request<TicketPreviewResponse>('/api/tickets/upload', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export async function confirmTicket(
   imageUri: string,
-  deviceId: string,
+  payload: TicketConfirmPayload,
 ): Promise<TicketUploadResponse> {
   const formData = new FormData();
 
@@ -154,19 +199,26 @@ export async function uploadTicket(
     (formData as any).append('file', { uri: imageUri, type: 'image/jpeg', name: 'ticket.jpg' });
   }
 
-  return request<TicketUploadResponse>('/api/tickets/upload', {
+  formData.append('game_type', payload.game_type);
+  formData.append('draw_date', payload.draw_date);
+  formData.append('numbers_json', JSON.stringify(payload.numbers));
+  if (payload.bet_type) formData.append('bet_type', payload.bet_type);
+  if (payload.big_amount) formData.append('big_amount', payload.big_amount);
+  if (payload.small_amount) formData.append('small_amount', payload.small_amount);
+  if (payload.raw_ocr_text) formData.append('raw_ocr_text', payload.raw_ocr_text);
+
+  return request<TicketUploadResponse>('/api/tickets/confirm', {
     method: 'POST',
-    headers: { 'X-Device-ID': deviceId },
     body: formData,
   });
 }
 
-export async function listTickets(
-  deviceId: string,
-  params?: { sort?: string; filter?: string },
-): Promise<TicketListItem[]> {
-  const qs = new URLSearchParams({ device_id: deviceId, ...params }).toString();
-  return request<TicketListItem[]>(`/api/tickets?${qs}`);
+export async function listTickets(params?: {
+  sort?: string;
+  filter?: string;
+}): Promise<TicketListItem[]> {
+  const qs = new URLSearchParams({ ...params }).toString();
+  return request<TicketListItem[]>(`/api/tickets${qs ? `?${qs}` : ''}`);
 }
 
 export async function getTicket(id: string): Promise<TicketDetail> {
@@ -176,8 +228,6 @@ export async function getTicket(id: string): Promise<TicketDetail> {
 export async function deleteTicket(id: string): Promise<void> {
   await fetch(`${API_URL}/api/tickets/${id}`, { method: 'DELETE' });
 }
-
-// ── Results ───────────────────────────────────────────────────────────────────
 
 export async function listResults(params?: {
   game_type?: string;
@@ -199,17 +249,6 @@ export async function getResult(
   return request<DrawResultResponse>(`/api/results/${gameType}/${drawDate}`);
 }
 
-// ── Predictions ───────────────────────────────────────────────────────────────
-
 export async function getPredictions(): Promise<PredictionResponse> {
   return request<PredictionResponse>('/api/predictions');
-}
-
-// ── Utilities ─────────────────────────────────────────────────────────────────
-
-/** Return a full URL for a ticket image stored on the backend. */
-export function imageUrl(imagePath: string): string {
-  // imagePath is like "./uploads/uuid.jpg" — strip the leading "./"
-  const relative = imagePath.replace(/^\.\//, '');
-  return `${API_URL}/${relative}`;
 }

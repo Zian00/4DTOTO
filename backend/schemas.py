@@ -1,74 +1,93 @@
-from pydantic import BaseModel
-from uuid import UUID
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
+from uuid import UUID
+
+from pydantic import BaseModel, Field
+
+from models import FourDBetType, GameType, TicketStatus, TotoSystemType
 
 
-# ---------- Ticket ----------
-
-class TicketUploadResponse(BaseModel):
-    id: UUID
-    status: str
+class TicketPreviewResponse(BaseModel):
     game_type: str | None
     draw_date: date | None
     bet_type: str | None
     numbers: Any
+    raw_ocr_text: str | None = None
 
-    model_config = {"from_attributes": True}
 
-
-class CombinationOut(BaseModel):
+class TicketUploadResponse(BaseModel):
     id: UUID
-    combination: str
-    is_system_expanded: bool
-
-    model_config = {"from_attributes": True}
-
-
-class TicketResultOut(BaseModel):
-    id: UUID
-    combination_id: UUID | None
-    is_winner: bool
-    prize_tier: str | None
-    notified: bool
-    checked_at: datetime
+    status: TicketStatus
+    game_type: GameType
+    draw_date: date
+    purchase_datetime: datetime
+    total_price: Decimal
+    bet_label: str | None
+    numbers: list[str]
+    raw_ocr_text: str | None = None
 
     model_config = {"from_attributes": True}
 
 
 class TicketListItem(BaseModel):
     id: UUID
-    game_type: str
+    game_type: GameType
     draw_date: date
-    purchase_date: datetime
-    bet_type: str | None
-    status: str
-    image_path: str
+    purchase_datetime: datetime
+    total_price: Decimal
+    status: TicketStatus
+    bet_label: str | None = None
     is_winner: bool | None = None
     prize_tier: str | None = None
 
     model_config = {"from_attributes": True}
 
 
-class TicketDetail(BaseModel):
-    id: UUID
-    device_id: str
-    image_path: str
-    game_type: str
-    draw_date: date
-    purchase_date: datetime
-    numbers: Any
-    bet_type: str | None
-    raw_ocr_text: str | None
-    status: str
-    created_at: datetime
-    combinations: list[CombinationOut] = []
-    results: list[TicketResultOut] = []
+class FourDTicketOut(BaseModel):
+    number: str
+    bet_type: FourDBetType
+    big_amount: Decimal
+    small_amount: Decimal
 
     model_config = {"from_attributes": True}
 
 
-# ---------- Draw Results ----------
+class TotoTicketOut(BaseModel):
+    is_system: bool
+    system_type: TotoSystemType | None
+
+    model_config = {"from_attributes": True}
+
+
+class NotificationOut(BaseModel):
+    id: UUID
+    message: str
+    is_read: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TicketDetail(BaseModel):
+    id: UUID
+    game_type: GameType
+    purchase_datetime: datetime
+    draw_date: date
+    total_price: Decimal
+    status: TicketStatus
+    created_at: datetime
+    updated_at: datetime
+    bet_label: str | None = None
+    numbers: list[str] = Field(default_factory=list)
+    four_d_ticket: FourDTicketOut | None = None
+    toto_ticket: TotoTicketOut | None = None
+    toto_numbers: list[int] = Field(default_factory=list)
+    toto_expanded_combinations: list[str] = Field(default_factory=list)
+    notifications: list[NotificationOut] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
 
 class DrawResultResponse(BaseModel):
     id: UUID
@@ -87,8 +106,6 @@ class PaginatedResults(BaseModel):
     limit: int
 
 
-# ---------- Predictions ----------
-
 class TotoPrediction(BaseModel):
     primary: list[int]
     supplementary: list[int]
@@ -103,8 +120,6 @@ class PredictionResponse(BaseModel):
     data_points: int
     disclaimer: str
 
-
-# ---------- Errors ----------
 
 class ErrorResponse(BaseModel):
     error: str
