@@ -49,16 +49,27 @@ class TotoSystemType(str, enum.Enum):
     SYSTEM_12 = "SYSTEM_12"
 
 
+def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+    return [str(member.value) for member in enum_cls]
+
+
 class Ticket(Base):
     __tablename__ = "tickets"
     __table_args__ = (
         Index("ix_tickets_draw_date", "draw_date"),
         Index("ix_tickets_status", "status"),
+        Index("ix_tickets_purchase_group_id", "purchase_group_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    purchase_group_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     game_type: Mapped[GameType] = mapped_column(
-        Enum(GameType, name="game_type_enum", native_enum=True),
+        Enum(
+            GameType,
+            name="game_type_enum",
+            native_enum=True,
+            values_callable=_enum_values,
+        ),
         nullable=False,
     )
     purchase_datetime: Mapped[datetime] = mapped_column(
@@ -67,6 +78,7 @@ class Ticket(Base):
         server_default=func.now(),
     )
     draw_date: Mapped[date] = mapped_column(Date, nullable=False)
+    draw_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
     total_price: Mapped[Decimal] = mapped_column(
         Numeric(12, 2),
         nullable=False,

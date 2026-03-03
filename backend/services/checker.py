@@ -53,6 +53,19 @@ async def check_ticket(ticket: Ticket, db: AsyncSession) -> None:
     if not results:
         return
 
+    ticket_draw_number = _normalize_draw_number(loaded_ticket.draw_number)
+    result_draw_number = _normalize_draw_number(results.get("draw_no"))
+    if ticket_draw_number and result_draw_number and ticket_draw_number != result_draw_number:
+        loaded_ticket.status = TicketStatus.LOST
+        message = (
+            f"Ticket checked for {loaded_ticket.game_type.value} draw "
+            f"{loaded_ticket.draw_date.isoformat()}: draw number mismatch "
+            f"(ticket {ticket_draw_number}, result {result_draw_number})."
+        )
+        db.add(Notification(ticket_id=loaded_ticket.id, message=message))
+        await db.commit()
+        return
+
     prize_tier: str | None = None
     if loaded_ticket.game_type.value == "4D":
         if not loaded_ticket.four_d_ticket:
@@ -100,6 +113,23 @@ def _check_4d(number: str, results: dict) -> str | None:
         return "Consolation"
 
     return None
+
+
+def _normalize_draw_number(value) -> str | None:
+    if value is None:
+        return None
+    token = str(value).strip()
+    if not token:
+        return None
+    digits = []
+    for ch in token:
+        if ch.isdigit():
+            digits.append(ch)
+        elif digits:
+            break
+    if not digits:
+        return None
+    return "".join(digits)
 
 
 def _check_toto(combinations: list[str], results: dict) -> str | None:

@@ -1,7 +1,8 @@
 import json
 import re
 import traceback
-from datetime import date
+import uuid
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from itertools import combinations
 from typing import Any
@@ -24,12 +25,18 @@ from models import (
     TotoSystemType,
     TotoTicket,
 )
-from schemas import TicketDetail, TicketListItem, TicketPreviewResponse, TicketUploadResponse
+from schemas import (
+    TicketConfirmBatchResponse,
+    TicketDetail,
+    TicketListItem,
+    TicketPreviewResponse,
+)
 
 router = APIRouter()
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 RAW_LOG_MAX = 1200
+MAX_CREATED_TICKETS = 300
 
 
 @router.post("/upload", response_model=TicketPreviewResponse)
@@ -48,31 +55,62 @@ async def upload_ticket(file: UploadFile = File(...)):
         ocr_data = {
             "game_type": "4D",
             "draw_date": str(date.today()),
+            "draw_dates": [str(date.today())],
+            "draw_number": None,
+            "draw_numbers": [],
+            "purchase_datetime": None,
             "bet_type": "ORDINARY",
             "numbers": [],
+            "big_amount": None,
+            "small_amount": None,
+            "total_price": None,
             "raw_text": f"OCR failed: {exc}",
         }
 
-    game_type, draw_date, bet_type, numbers, raw_text = _parse_ocr_data(ocr_data)
+    (
+        game_type,
+        draw_date,
+        draw_date_options,
+        draw_number,
+        draw_number_options,
+        purchase_datetime,
+        bet_type,
+        numbers,
+        raw_text,
+        big_amount,
+        small_amount,
+        total_price,
+    ) = _parse_ocr_data(ocr_data)
     _log_raw_ocr_text(raw_text, context="preview")
     return TicketPreviewResponse(
         game_type=game_type,
-        draw_date=draw_date,
+        draw_date=_format_date_ddmmyyyy(draw_date),
+        draw_date_options=[_format_date_ddmmyyyy(d) for d in draw_date_options],
+        draw_number=draw_number,
+        draw_number_options=draw_number_options,
+        purchase_datetime=_format_purchase_datetime_for_preview(purchase_datetime),
         bet_type=bet_type,
         numbers=numbers,
+        big_amount=big_amount,
+        small_amount=small_amount,
+        total_price=total_price,
         raw_ocr_text=raw_text,
     )
 
 
-@router.post("/confirm", response_model=TicketUploadResponse)
+@router.post("/confirm", response_model=TicketConfirmBatchResponse)
 async def confirm_ticket(
     file: UploadFile = File(...),
     game_type: str = Form(...),
-    draw_date: str = Form(...),
+    draw_date: str | None = Form(None),
+    draw_dates_json: str | None = Form(None),
+    draw_number: str | None = Form(None),
+    draw_numbers_json: str | None = Form(None),
     numbers_json: str = Form(...),
     bet_type: str | None = Form(None),
     big_amount: str | None = Form(None),
     small_amount: str | None = Form(None),
+    purchase_datetime: str | None = Form(None),
     raw_ocr_text: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
@@ -81,7 +119,9 @@ async def confirm_ticket(
         raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
 
     gt = _parse_game_type(game_type)
-    draw_date_value = _parse_draw_date(draw_date)
+    draw_dates = _parse_draw_dates(draw_dates_json, draw_date)
+    draw_numbers = _parse_draw_numbers(draw_numbers_json, draw_number, draw_dates)
+    purchase_group_id = uuid.uuid4()
 
     try:
         parsed_numbers = json.loads(numbers_json)
@@ -92,71 +132,110 @@ async def confirm_ticket(
     if not numbers:
         raise HTTPException(status_code=400, detail="At least one number set is required")
 
-    ticket = Ticket(
-        game_type=gt,
-        draw_date=draw_date_value,
-        status=TicketStatus.PENDING,
-    )
+    purchase_dt = _parse_purchase_datetime(purchase_datetime)
+    created_tickets: list[Ticket] = []
 
     if gt == GameType.FOUR_D:
-        number = _extract_single_4d_number(numbers)
+        four_d_numbers = _extract_4d_numbers(numbers)
+        if len(draw_dates) * len(four_d_numbers) > MAX_CREATED_TICKETS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Too many ticket entries generated. Max {MAX_CREATED_TICKETS}.",
+            )
+
         four_d_bet_type = _parse_4d_bet_type(bet_type)
         big = _parse_decimal(big_amount, default=Decimal("0.00"))
         small = _parse_decimal(small_amount, default=Decimal("0.00"))
         if big <= 0 and small <= 0:
             small = Decimal("1.00")
-        ticket.total_price = big + small
-        ticket.four_d_ticket = FourDTicket(
-            number=number,
-            bet_type=four_d_bet_type,
-            big_amount=big,
-            small_amount=small,
-        )
+
+        for idx, d in enumerate(draw_dates):
+            draw_no = draw_numbers[idx] if idx < len(draw_numbers) else None
+            for number in four_d_numbers:
+                ticket = Ticket(
+                    purchase_group_id=purchase_group_id,
+                    game_type=gt,
+                    draw_date=d,
+                    draw_number=draw_no,
+                    status=TicketStatus.PENDING,
+                    total_price=big + small,
+                )
+                if purchase_dt is not None:
+                    ticket.purchase_datetime = purchase_dt
+                ticket.four_d_ticket = FourDTicket(
+                    number=number,
+                    bet_type=four_d_bet_type,
+                    big_amount=big,
+                    small_amount=small,
+                )
+                created_tickets.append(ticket)
     else:
-        selected = _extract_single_toto_set(numbers)
-        is_system, system_type = _parse_toto_mode(selected, bet_type)
-        ticket.total_price = Decimal(str(len(list(combinations(sorted(selected), 6)))))
-        ticket.toto_ticket = TotoTicket(is_system=is_system, system_type=system_type)
-        ticket.toto_numbers = [TotoNumber(number=n) for n in selected]
-        for combo in combinations(sorted(selected), 6):
-            combo_str = ",".join(str(n) for n in combo)
-            ticket.toto_expanded_combinations.append(TotoExpandedCombination(combination=combo_str))
+        toto_sets = _extract_toto_sets(numbers)
+        if len(draw_dates) * len(toto_sets) > MAX_CREATED_TICKETS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Too many ticket entries generated. Max {MAX_CREATED_TICKETS}.",
+            )
+
+        for idx, d in enumerate(draw_dates):
+            draw_no = draw_numbers[idx] if idx < len(draw_numbers) else None
+            for selected in toto_sets:
+                is_system, system_type = _parse_toto_mode(selected, bet_type)
+                total_price = Decimal(str(len(list(combinations(sorted(selected), 6)))))
+
+                ticket = Ticket(
+                    purchase_group_id=purchase_group_id,
+                    game_type=gt,
+                    draw_date=d,
+                    draw_number=draw_no,
+                    status=TicketStatus.PENDING,
+                    total_price=total_price,
+                )
+                if purchase_dt is not None:
+                    ticket.purchase_datetime = purchase_dt
+                ticket.toto_ticket = TotoTicket(is_system=is_system, system_type=system_type)
+                ticket.toto_numbers = [TotoNumber(number=n) for n in selected]
+                for combo in combinations(sorted(selected), 6):
+                    combo_str = ",".join(str(n) for n in combo)
+                    ticket.toto_expanded_combinations.append(
+                        TotoExpandedCombination(combination=combo_str)
+                    )
+                created_tickets.append(ticket)
+
+    if not created_tickets:
+        raise HTTPException(status_code=400, detail="No ticket entries could be generated")
 
     _log_raw_ocr_text(raw_ocr_text, context="confirm")
-    db.add(ticket)
+    db.add_all(created_tickets)
     await db.commit()
-    await db.refresh(ticket)
+    for ticket in created_tickets:
+        await db.refresh(ticket)
 
     from services.checker import check_ticket
     from services.scheduler import schedule_poll
 
-    if draw_date_value > date.today():
-        schedule_poll(str(ticket.id), ticket.draw_date)
-    else:
-        await check_ticket(ticket, db)
+    today = date.today()
+    for ticket in created_tickets:
+        if ticket.draw_date > today:
+            schedule_poll(str(ticket.id), ticket.draw_date)
+        else:
+            await check_ticket(ticket, db)
 
-    stmt = (
-        select(Ticket)
-        .options(
-            selectinload(Ticket.four_d_ticket),
-            selectinload(Ticket.toto_ticket),
-            selectinload(Ticket.toto_numbers),
-        )
-        .where(Ticket.id == ticket.id)
-    )
-    ticket_row = (await db.execute(stmt)).scalar_one()
-    bet_label, number_strings = _ticket_display_data(ticket_row)
+    ticket_ids = [ticket.id for ticket in created_tickets]
+    status_stmt = select(Ticket.status).where(Ticket.id.in_(ticket_ids))
+    statuses = (await db.execute(status_stmt)).scalars().all()
+    pending_count = sum(1 for s in statuses if s == TicketStatus.PENDING)
+    won_count = sum(1 for s in statuses if s == TicketStatus.WON)
+    lost_count = sum(1 for s in statuses if s == TicketStatus.LOST)
 
-    return TicketUploadResponse(
-        id=ticket_row.id,
-        status=ticket_row.status,
-        game_type=ticket_row.game_type,
-        draw_date=ticket_row.draw_date,
-        purchase_datetime=ticket_row.purchase_datetime,
-        total_price=ticket_row.total_price,
-        bet_label=bet_label,
-        numbers=number_strings,
-        raw_ocr_text=raw_ocr_text,
+    return TicketConfirmBatchResponse(
+        purchase_group_id=purchase_group_id,
+        created_count=len(ticket_ids),
+        ticket_ids=ticket_ids,
+        pending_count=pending_count,
+        won_count=won_count,
+        lost_count=lost_count,
+        message=f"Created {len(ticket_ids)} ticket entries.",
     )
 
 
@@ -191,8 +270,10 @@ async def list_tickets(
         items.append(
             TicketListItem(
                 id=ticket.id,
+                purchase_group_id=ticket.purchase_group_id,
                 game_type=ticket.game_type,
                 draw_date=ticket.draw_date,
+                draw_number=ticket.draw_number,
                 purchase_datetime=ticket.purchase_datetime,
                 total_price=ticket.total_price,
                 status=ticket.status,
@@ -227,9 +308,11 @@ async def get_ticket(ticket_id: str, db: AsyncSession = Depends(get_db)):
     bet_label, number_strings = _ticket_display_data(ticket)
     return TicketDetail(
         id=ticket.id,
+        purchase_group_id=ticket.purchase_group_id,
         game_type=ticket.game_type,
         purchase_datetime=ticket.purchase_datetime,
         draw_date=ticket.draw_date,
+        draw_number=ticket.draw_number,
         total_price=ticket.total_price,
         status=ticket.status,
         created_at=ticket.created_at,
@@ -249,7 +332,10 @@ async def delete_ticket(ticket_id: str, db: AsyncSession = Depends(get_db)):
     ticket = await _load_ticket(ticket_id, db)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    await db.delete(ticket)
+    stmt = select(Ticket).where(Ticket.purchase_group_id == ticket.purchase_group_id)
+    group_rows = (await db.execute(stmt)).scalars().all()
+    for row in group_rows:
+        await db.delete(row)
     await db.commit()
 
 
@@ -279,20 +365,71 @@ def _parse_ticket_uuid(ticket_id: str):
     return uuid.UUID(ticket_id)
 
 
-def _parse_ocr_data(ocr_data: dict[str, Any]) -> tuple[str, date, str, list[list[str]], str]:
+def _parse_ocr_data(
+    ocr_data: dict[str, Any],
+) -> tuple[
+    str,
+    date,
+    list[date],
+    str | None,
+    list[str],
+    datetime | None,
+    str,
+    list[list[str]],
+    str,
+    str | None,
+    str | None,
+    str | None,
+]:
     raw_game_type = str(ocr_data.get("game_type") or "4D").upper()
     game_type = "TOTO" if raw_game_type == "TOTO" else "4D"
 
-    draw_date_raw = ocr_data.get("draw_date")
+    draw_date_token = str(ocr_data.get("draw_date") or date.today().isoformat())
     try:
-        draw_date = date.fromisoformat(str(draw_date_raw)) if draw_date_raw else date.today()
-    except (TypeError, ValueError):
+        draw_date = _parse_draw_date(draw_date_token)
+    except HTTPException:
         draw_date = date.today()
 
-    bet_type = str(ocr_data.get("bet_type") or "").strip() or "ORDINARY"
+    draw_date_options = _parse_draw_date_options(ocr_data.get("draw_dates"))
+    if draw_date not in draw_date_options:
+        draw_date_options.insert(0, draw_date)
+    draw_number = _normalize_draw_number_token(ocr_data.get("draw_number"))
+    draw_number_options = _parse_draw_number_options(ocr_data.get("draw_numbers"))
+    if draw_number and draw_number not in draw_number_options:
+        draw_number_options.insert(0, draw_number)
+    if not draw_number and draw_number_options:
+        draw_number = draw_number_options[0]
+    try:
+        purchase_datetime = _parse_purchase_datetime(
+            str(ocr_data.get("purchase_datetime") or "").strip() or None
+        )
+    except HTTPException:
+        purchase_datetime = None
+
+    bet_type_raw = str(ocr_data.get("bet_type") or "").strip()
+    if bet_type_raw:
+        bet_type = bet_type_raw
+    else:
+        bet_type = "STANDARD" if game_type == "TOTO" else "ORDINARY"
     numbers = _normalize_numbers(ocr_data.get("numbers"))
     raw_text = str(ocr_data.get("raw_text") or "")
-    return game_type, draw_date, bet_type, numbers, raw_text
+    big_amount = _normalize_amount_for_preview(ocr_data.get("big_amount"))
+    small_amount = _normalize_amount_for_preview(ocr_data.get("small_amount"))
+    total_price = _normalize_amount_for_preview(ocr_data.get("total_price"))
+    return (
+        game_type,
+        draw_date,
+        draw_date_options,
+        draw_number,
+        draw_number_options,
+        purchase_datetime,
+        bet_type,
+        numbers,
+        raw_text,
+        big_amount,
+        small_amount,
+        total_price,
+    )
 
 
 def _parse_game_type(value: str) -> GameType:
@@ -305,10 +442,129 @@ def _parse_game_type(value: str) -> GameType:
 
 
 def _parse_draw_date(value: str) -> date:
-    try:
-        return date.fromisoformat(value)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="draw_date must be YYYY-MM-DD")
+    token = value.strip()
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(token, fmt).date()
+        except ValueError:
+            continue
+    raise HTTPException(status_code=400, detail="draw_date must be DD/MM/YYYY")
+
+
+def _parse_draw_dates(draw_dates_json: str | None, draw_date: str | None) -> list[date]:
+    tokens: list[str] = []
+    if draw_dates_json:
+        try:
+            parsed = json.loads(draw_dates_json)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="draw_dates_json must be valid JSON")
+        if isinstance(parsed, list):
+            tokens.extend(str(v).strip() for v in parsed if str(v).strip())
+        elif isinstance(parsed, str) and parsed.strip():
+            tokens.append(parsed.strip())
+        else:
+            raise HTTPException(status_code=400, detail="draw_dates_json must be an array of dates")
+
+    if draw_date and draw_date.strip():
+        tokens.append(draw_date.strip())
+
+    if not tokens:
+        raise HTTPException(status_code=400, detail="At least one draw date is required")
+
+    out: list[date] = []
+    for token in tokens:
+        parsed = _parse_draw_date(token)
+        if parsed not in out:
+            out.append(parsed)
+    return out
+
+
+def _parse_draw_date_options(raw: Any) -> list[date]:
+    if not isinstance(raw, list):
+        return []
+    out: list[date] = []
+    for item in raw:
+        token = str(item).strip()
+        if not token:
+            continue
+        try:
+            parsed = _parse_draw_date(token)
+        except HTTPException:
+            continue
+        if parsed not in out:
+            out.append(parsed)
+    return out
+
+
+def _parse_draw_number_options(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for item in raw:
+        normalized = _normalize_draw_number_token(item)
+        if normalized and normalized not in out:
+            out.append(normalized)
+    return out
+
+
+def _parse_draw_numbers(
+    draw_numbers_json: str | None,
+    draw_number: str | None,
+    draw_dates: list[date],
+) -> list[str | None]:
+    tokens: list[str] = []
+    if draw_numbers_json:
+        try:
+            parsed = json.loads(draw_numbers_json)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="draw_numbers_json must be valid JSON")
+        if isinstance(parsed, list):
+            tokens.extend(str(v).strip() for v in parsed if str(v).strip())
+        elif isinstance(parsed, str) and parsed.strip():
+            tokens.append(parsed.strip())
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="draw_numbers_json must be an array of draw numbers",
+            )
+
+    if draw_number and draw_number.strip():
+        tokens.append(draw_number.strip())
+
+    normalized: list[str] = []
+    for token in tokens:
+        normalized_token = _normalize_draw_number_token(token)
+        if normalized_token:
+            normalized.append(normalized_token)
+
+    if not normalized:
+        return [None] * len(draw_dates)
+
+    if len(normalized) > len(draw_dates):
+        raise HTTPException(
+            status_code=400,
+            detail="draw numbers cannot exceed draw dates count",
+        )
+
+    if len(normalized) == 1 and len(draw_dates) > 1:
+        return [normalized[0]] * len(draw_dates)
+
+    if len(normalized) < len(draw_dates):
+        return normalized + [None] * (len(draw_dates) - len(normalized))
+
+    return normalized
+
+
+def _normalize_draw_number_token(raw: Any) -> str | None:
+    if raw is None:
+        return None
+    token = str(raw).strip()
+    if not token:
+        return None
+    match = re.search(r"(\d{3,6})(?:/\d{2,4})?", token)
+    if not match:
+        return None
+    return match.group(1)
 
 
 def _normalize_numbers(raw_numbers: Any) -> list[list[str]]:
@@ -325,35 +581,50 @@ def _normalize_numbers(raw_numbers: Any) -> list[list[str]]:
     return normalized
 
 
-def _extract_single_4d_number(numbers: list[list[str]]) -> str:
-    tokens = []
+def _extract_4d_numbers(numbers: list[list[str]]) -> list[str]:
+    tokens: list[str] = []
     for row in numbers:
         for raw in row:
             token = raw.strip()
             if token.isdigit() and len(token) == 4:
-                tokens.append(token)
+                if token not in tokens:
+                    tokens.append(token)
     if not tokens:
-        raise HTTPException(status_code=400, detail="4D ticket requires one 4-digit number")
-    return tokens[0]
+        raise HTTPException(status_code=400, detail="At least one valid 4-digit number is required")
+    return tokens
 
 
-def _extract_single_toto_set(numbers: list[list[str]]) -> list[int]:
+def _extract_toto_sets(numbers: list[list[str]]) -> list[list[int]]:
     if not numbers:
-        raise HTTPException(status_code=400, detail="TOTO ticket requires one number set")
-    first_row = numbers[0]
-    selected: list[int] = []
-    for raw in first_row:
-        if not raw.strip().isdigit():
-            continue
-        value = int(raw)
-        if 1 <= value <= 49:
-            selected.append(value)
-    dedup_sorted = sorted(set(selected))
-    if len(dedup_sorted) < 6:
-        raise HTTPException(status_code=400, detail="TOTO must include at least 6 unique numbers (1-49)")
-    if len(dedup_sorted) > 12:
-        raise HTTPException(status_code=400, detail="TOTO system bet supports up to 12 unique numbers")
-    return dedup_sorted
+        raise HTTPException(status_code=400, detail="TOTO requires at least one number set")
+
+    sets: list[list[int]] = []
+    for idx, row in enumerate(numbers, start=1):
+        selected: list[int] = []
+        for raw in row:
+            token = raw.strip()
+            if not token.isdigit():
+                continue
+            value = int(token)
+            if 1 <= value <= 49:
+                selected.append(value)
+
+        dedup_sorted = sorted(set(selected))
+        if len(dedup_sorted) < 6:
+            raise HTTPException(
+                status_code=400,
+                detail=f"TOTO row {idx} must include at least 6 unique numbers (1-49)",
+            )
+        if len(dedup_sorted) > 12:
+            raise HTTPException(
+                status_code=400,
+                detail=f"TOTO row {idx} supports at most 12 unique numbers",
+            )
+        sets.append(dedup_sorted)
+
+    if not sets:
+        raise HTTPException(status_code=400, detail="No valid TOTO number set found")
+    return sets
 
 
 def _parse_4d_bet_type(raw: str | None) -> FourDBetType:
@@ -426,6 +697,56 @@ def _parse_decimal(raw: str | None, default: Decimal) -> Decimal:
     if value < 0:
         raise HTTPException(status_code=400, detail=f"Decimal value cannot be negative: {raw}")
     return value.quantize(Decimal("0.01"))
+
+
+def _parse_purchase_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    token = value.strip()
+    if not token:
+        return None
+
+    formats = (
+        "%d/%m/%Y %I:%M %p",
+        "%d/%m/%Y %H:%M",
+        "%d/%m/%y %I:%M %p",
+        "%d/%m/%y %H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+    )
+    for fmt in formats:
+        try:
+            return datetime.strptime(token, fmt)
+        except ValueError:
+            continue
+    raise HTTPException(
+        status_code=400,
+        detail="purchase_datetime must be DD/MM/YYYY HH:MM AM/PM",
+    )
+
+
+def _normalize_amount_for_preview(raw: Any) -> str | None:
+    if raw is None:
+        return None
+    token = str(raw).strip()
+    if not token:
+        return None
+    try:
+        return f"{Decimal(token).quantize(Decimal('0.01'))}"
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _format_date_ddmmyyyy(value: date) -> str:
+    return value.strftime("%d/%m/%Y")
+
+
+def _format_purchase_datetime_for_preview(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.strftime("%d/%m/%Y %I:%M %p")
 
 
 def _log_raw_ocr_text(raw_text: Any, context: str) -> None:

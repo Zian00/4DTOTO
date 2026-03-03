@@ -43,8 +43,13 @@ function normalizeApiUrl(rawUrl: string): string {
 const RAW_API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
 const API_URL = normalizeApiUrl(RAW_API_URL);
 
+export function getApiBaseUrl(): string {
+  return API_URL;
+}
+
 export interface TicketUploadResponse {
   id: string;
+  purchase_group_id: string;
   status: 'PENDING' | 'WON' | 'LOST';
   game_type: '4D' | 'TOTO';
   draw_date: string;
@@ -55,17 +60,36 @@ export interface TicketUploadResponse {
   raw_ocr_text?: string | null;
 }
 
+export interface TicketConfirmBatchResponse {
+  purchase_group_id: string;
+  created_count: number;
+  ticket_ids: string[];
+  pending_count: number;
+  won_count: number;
+  lost_count: number;
+  message: string;
+}
+
 export interface TicketPreviewResponse {
   game_type: string | null;
   draw_date: string | null;
+  draw_date_options?: string[];
+  draw_number?: string | null;
+  draw_number_options?: string[];
+  purchase_datetime?: string | null;
   bet_type: string | null;
   numbers: unknown;
+  big_amount?: string | null;
+  small_amount?: string | null;
+  total_price?: string | null;
   raw_ocr_text?: string | null;
 }
 
 export interface TicketConfirmPayload {
   game_type: string;
-  draw_date: string;
+  draw_dates: string[];
+  draw_numbers?: string[] | null;
+  purchase_datetime?: string | null;
   bet_type?: string | null;
   numbers: string[][];
   big_amount?: string | null;
@@ -75,8 +99,10 @@ export interface TicketConfirmPayload {
 
 export interface TicketListItem {
   id: string;
+  purchase_group_id: string;
   game_type: '4D' | 'TOTO';
   draw_date: string;
+  draw_number?: string | null;
   purchase_datetime: string;
   total_price: number | string;
   bet_label: string | null;
@@ -113,9 +139,11 @@ export interface NotificationOut {
 
 export interface TicketDetail {
   id: string;
+  purchase_group_id: string;
   game_type: '4D' | 'TOTO';
   purchase_datetime: string;
   draw_date: string;
+  draw_number?: string | null;
   total_price: number | string;
   status: 'PENDING' | 'WON' | 'LOST';
   created_at: string;
@@ -160,10 +188,18 @@ export interface PredictionResponse {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, init);
+  const url = `${API_URL}${path}`;
+  let res: Response;
+  try {
+    res = await fetch(url, init);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Network request failed';
+    throw new Error(`Cannot reach API (${API_URL}). ${msg}`);
+  }
+
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as Record<string, string>;
-    throw new Error(err.detail ?? `Request failed: ${res.status}`);
+    throw new Error(err.detail ?? `Request failed (${res.status}) at ${url}`);
   }
   return res.json() as Promise<T>;
 }
@@ -188,7 +224,7 @@ export async function uploadTicket(imageUri: string): Promise<TicketPreviewRespo
 export async function confirmTicket(
   imageUri: string,
   payload: TicketConfirmPayload,
-): Promise<TicketUploadResponse> {
+): Promise<TicketConfirmBatchResponse> {
   const formData = new FormData();
 
   if (Platform.OS === 'web') {
@@ -200,14 +236,18 @@ export async function confirmTicket(
   }
 
   formData.append('game_type', payload.game_type);
-  formData.append('draw_date', payload.draw_date);
+  formData.append('draw_dates_json', JSON.stringify(payload.draw_dates));
+  if (payload.draw_numbers && payload.draw_numbers.length > 0) {
+    formData.append('draw_numbers_json', JSON.stringify(payload.draw_numbers));
+  }
+  if (payload.purchase_datetime) formData.append('purchase_datetime', payload.purchase_datetime);
   formData.append('numbers_json', JSON.stringify(payload.numbers));
   if (payload.bet_type) formData.append('bet_type', payload.bet_type);
   if (payload.big_amount) formData.append('big_amount', payload.big_amount);
   if (payload.small_amount) formData.append('small_amount', payload.small_amount);
   if (payload.raw_ocr_text) formData.append('raw_ocr_text', payload.raw_ocr_text);
 
-  return request<TicketUploadResponse>('/api/tickets/confirm', {
+  return request<TicketConfirmBatchResponse>('/api/tickets/confirm', {
     method: 'POST',
     body: formData,
   });

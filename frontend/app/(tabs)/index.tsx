@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,6 +17,7 @@ import { Colors, Radius, Spacing, Typography } from '../../constants/theme';
 import { useToast } from '../../hooks/useToast';
 import {
   confirmTicket,
+  getApiBaseUrl,
   uploadTicket,
   type TicketPreviewResponse,
 } from '../../services/api';
@@ -27,16 +28,75 @@ type GameType = '4D' | 'TOTO';
 
 type OcrDraft = {
   gameType: GameType;
-  drawDate: string;
+  drawDatesText: string;
+  drawDateOptions: string[];
+  drawNumbersText: string;
+  drawNumberOptions: string[];
+  purchaseDatetime: string;
   betType: string;
   numbersText: string;
   bigAmount: string;
   smallAmount: string;
+  totalPrice: string;
   rawText: string;
 };
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+function todayDmy(): string {
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yyyy = String(now.getFullYear());
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+function normalizeDateForEditor(raw: string | null): string {
+  if (!raw) return todayDmy();
+  const trimmed = raw.trim();
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) return trimmed;
+
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (isoMatch) {
+    return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
+  }
+
+  const dmy2Match = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(trimmed);
+  if (dmy2Match) {
+    return `${dmy2Match[1]}/${dmy2Match[2]}/20${dmy2Match[3]}`;
+  }
+  return todayDmy();
+}
+
+function nowDmyHmAmPm(): string {
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yyyy = String(now.getFullYear());
+  const hour24 = now.getHours();
+  const minute = String(now.getMinutes()).padStart(2, '0');
+  const ampm = hour24 >= 12 ? 'PM' : 'AM';
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return `${dd}/${mm}/${yyyy} ${String(hour12).padStart(2, '0')}:${minute} ${ampm}`;
+}
+
+function normalizeDateTimeForEditor(raw: string | null | undefined): string {
+  if (!raw) return nowDmyHmAmPm();
+  const trimmed = raw.trim();
+  if (/^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}\s+(AM|PM)$/i.test(trimmed)) {
+    return trimmed.toUpperCase();
+  }
+
+  const isoLike = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::\d{2})?$/.exec(trimmed);
+  if (isoLike) {
+    const year = isoLike[1];
+    const month = isoLike[2];
+    const day = isoLike[3];
+    const hour24 = Number.parseInt(isoLike[4], 10);
+    const minute = isoLike[5];
+    const ampm = hour24 >= 12 ? 'PM' : 'AM';
+    const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+    return `${day}/${month}/${year} ${String(hour12).padStart(2, '0')}:${minute} ${ampm}`;
+  }
+  return nowDmyHmAmPm();
 }
 
 function formatNumbersForEditor(numbers: unknown, gameType: GameType): string {
@@ -90,6 +150,59 @@ function parseNumbersForSubmit(text: string, gameType: GameType): string[][] {
   return output;
 }
 
+function parseDrawDatesForSubmit(text: string): string[] {
+  const tokens = text
+    .split(/[\n,]/)
+    .map((v) => v.trim())
+    .filter(Boolean);
+  const out: string[] = [];
+  for (const token of tokens) {
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(token)) continue;
+    if (!out.includes(token)) out.push(token);
+  }
+  return out;
+}
+
+function parseDrawNumbersForSubmit(text: string): string[] {
+  const tokens = text
+    .split(/[\n,]/)
+    .map((v) => v.trim())
+    .filter(Boolean);
+  const out: string[] = [];
+  for (const token of tokens) {
+    const match = token.match(/(\d{3,6})(?:\/\d{2,4})?/);
+    if (!match) continue;
+    out.push(match[1]);
+  }
+  return out;
+}
+
+function toggleDrawDateInText(text: string, value: string): string {
+  const current = parseDrawDatesForSubmit(text);
+  const exists = current.includes(value);
+  const next = exists ? current.filter((d) => d !== value) : [...current, value];
+  return next.join('\n');
+}
+
+function toggleDrawNumberInText(text: string, value: string): string {
+  const current = parseDrawNumbersForSubmit(text);
+  const exists = current.includes(value);
+  const next = exists ? current.filter((d) => d !== value) : [...current, value];
+  return next.join('\n');
+}
+
+function buildDateDrawPairs(drawDatesText: string, drawNumbersText: string): Array<{
+  drawDate: string;
+  drawNumber: string;
+}> {
+  const drawDates = parseDrawDatesForSubmit(drawDatesText);
+  const drawNumbers = parseDrawNumbersForSubmit(drawNumbersText);
+  return drawDates.map((drawDate, idx) => ({
+    drawDate,
+    drawNumber: drawNumbers[idx] ?? '',
+  }));
+}
+
 function normalizeBetType(gameType: GameType, betTypeRaw: string): string {
   const token = betTypeRaw.trim().toUpperCase();
   if (!token) return gameType === '4D' ? 'ORDINARY' : 'STANDARD';
@@ -101,21 +214,38 @@ function normalizeBetType(gameType: GameType, betTypeRaw: string): string {
 
 function toDraft(response: TicketPreviewResponse): OcrDraft {
   const gameType: GameType = response.game_type === 'TOTO' ? 'TOTO' : '4D';
+  const big = response.big_amount ?? '0.00';
+  const small = response.small_amount ?? '1.00';
+  const fallbackTotal = (Number.parseFloat(big) || 0) + (Number.parseFloat(small) || 0);
+  const drawOptionsRaw = response.draw_date_options ?? [];
+  const normalizedOptions = drawOptionsRaw.map((d) => normalizeDateForEditor(d));
+  const uniqueDrawOptions = Array.from(new Set(normalizedOptions.filter(Boolean)));
+  const primaryDrawDate = normalizeDateForEditor(response.draw_date);
+  const drawDates = uniqueDrawOptions.length > 0 ? uniqueDrawOptions : [primaryDrawDate];
+  const drawNumberOptionsRaw = response.draw_number_options ?? [];
+  const drawNumberPrimary = response.draw_number ? String(response.draw_number).trim() : '';
+  const drawNumbers = Array.from(
+    new Set(
+      [
+        ...drawNumberOptionsRaw.map((v) => String(v).trim()),
+        drawNumberPrimary,
+      ].filter(Boolean),
+    ),
+  );
   return {
     gameType,
-    drawDate: response.draw_date ?? todayIso(),
+    drawDatesText: drawDates.join('\n'),
+    drawDateOptions: drawDates,
+    drawNumbersText: drawNumbers.join('\n'),
+    drawNumberOptions: drawNumbers,
+    purchaseDatetime: normalizeDateTimeForEditor(response.purchase_datetime),
     betType: normalizeBetType(gameType, response.bet_type ?? ''),
     numbersText: formatNumbersForEditor(response.numbers, gameType),
-    bigAmount: '0.00',
-    smallAmount: '1.00',
+    bigAmount: big,
+    smallAmount: small,
+    totalPrice: response.total_price ?? fallbackTotal.toFixed(2),
     rawText: response.raw_ocr_text ?? '',
   };
-}
-
-function formatStatusMessage(status: 'PENDING' | 'WON' | 'LOST'): string {
-  if (status === 'WON') return 'Ticket confirmed. This ticket is a winner.';
-  if (status === 'LOST') return 'Ticket confirmed. Result checked: no prize.';
-  return 'Ticket confirmed. Waiting for draw result.';
 }
 
 export default function UploadScreen() {
@@ -125,6 +255,15 @@ export default function UploadScreen() {
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [uploadMsg, setUploadMsg] = useState('');
   const [draft, setDraft] = useState<OcrDraft | null>(null);
+  const mappingPairs = draft
+    ? buildDateDrawPairs(draft.drawDatesText, draft.drawNumbersText)
+    : [];
+
+  useEffect(() => {
+    if (__DEV__) {
+      console.log('[API][base]', getApiBaseUrl());
+    }
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -206,9 +345,25 @@ export default function UploadScreen() {
   async function handleConfirm() {
     if (!draft || !selectedUri) return;
 
-    const drawDate = draft.drawDate.trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(drawDate)) {
-      Alert.alert('Invalid date', 'Draw date must be in YYYY-MM-DD format.');
+    const drawDates = parseDrawDatesForSubmit(draft.drawDatesText);
+    if (drawDates.length === 0) {
+      Alert.alert('Invalid draw dates', 'Enter at least one draw date in DD/MM/YYYY format.');
+      return;
+    }
+    const drawNumbers = parseDrawNumbersForSubmit(draft.drawNumbersText);
+    if (drawNumbers.length > drawDates.length) {
+      Alert.alert(
+        'Invalid draw numbers',
+        'Draw numbers cannot exceed the number of draw dates.',
+      );
+      return;
+    }
+    const purchaseDatetime = draft.purchaseDatetime.trim().toUpperCase();
+    if (
+      purchaseDatetime &&
+      !/^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}\s+(AM|PM)$/.test(purchaseDatetime)
+    ) {
+      Alert.alert('Invalid purchase date', 'Purchase date must be DD/MM/YYYY HH:MM AM/PM.');
       return;
     }
 
@@ -220,23 +375,19 @@ export default function UploadScreen() {
 
     let submitNumbers: string[][] = [];
     if (draft.gameType === '4D') {
-      const candidate = parsedRows.flat()[0] ?? '';
-      if (!/^\d{4}$/.test(candidate)) {
-        Alert.alert('Invalid 4D number', 'Please enter a valid 4-digit number.');
+      const validRows = parsedRows.filter((row) => /^\d{4}$/.test(row[0] ?? ''));
+      if (validRows.length === 0) {
+        Alert.alert('Invalid 4D numbers', 'Enter one or more valid 4-digit numbers.');
         return;
       }
-      submitNumbers = [[candidate]];
+      submitNumbers = validRows;
     } else {
-      const firstRow = parsedRows[0] ?? [];
-      if (firstRow.length < 6) {
-        Alert.alert('Invalid TOTO numbers', 'Please enter at least 6 numbers (1-49).');
+      const badRow = parsedRows.find((row) => row.length < 6);
+      if (badRow) {
+        Alert.alert('Invalid TOTO numbers', 'Each TOTO set must contain at least 6 numbers.');
         return;
       }
-      if (parsedRows.length > 1) {
-        Alert.alert('One TOTO set only', 'Please submit one TOTO set per ticket.');
-        return;
-      }
-      submitNumbers = [firstRow];
+      submitNumbers = parsedRows;
     }
 
     if (draft.gameType === '4D') {
@@ -260,7 +411,9 @@ export default function UploadScreen() {
       }
       const response = await confirmTicket(selectedUri, {
         game_type: draft.gameType,
-        draw_date: drawDate,
+        draw_dates: drawDates,
+        draw_numbers: drawNumbers,
+        purchase_datetime: purchaseDatetime || null,
         bet_type: normalizeBetType(draft.gameType, draft.betType),
         numbers: submitNumbers,
         big_amount: draft.gameType === '4D' ? draft.bigAmount.trim() || null : null,
@@ -271,7 +424,10 @@ export default function UploadScreen() {
       setDraft(null);
       setSelectedUri(null);
       setUploadState('done');
-      setUploadMsg(formatStatusMessage(response.status));
+      setUploadMsg(
+        `${response.created_count} ticket entries created. `
+        + `${response.won_count} won, ${response.lost_count} lost, ${response.pending_count} pending.`
+      );
 
       showToast('Ticket confirmed.', 'info');
     } catch (err) {
@@ -358,13 +514,113 @@ export default function UploadScreen() {
             ))}
           </View>
 
-          <Text style={styles.inputLabel}>Draw Date (YYYY-MM-DD)</Text>
+          <Text style={styles.inputLabel}>Draw Dates (DD/MM/YYYY, one per line)</Text>
+          <TextInput
+            style={[styles.input, styles.drawDatesInput]}
+            value={draft.drawDatesText}
+            onChangeText={(text) => setDraft((prev) => (prev ? { ...prev, drawDatesText: text } : prev))}
+            autoCapitalize="none"
+            multiline
+            placeholder="03/03/2026\n04/03/2026"
+            placeholderTextColor={Colors.textSecondary}
+          />
+          {draft.drawDateOptions.length > 1 && (
+            <View style={styles.dateOptionsRow}>
+              {draft.drawDateOptions.map((opt) => (
+                <TouchableOpacity
+                  key={opt}
+                  style={[
+                    styles.dateOptionBtn,
+                    parseDrawDatesForSubmit(draft.drawDatesText).includes(opt)
+                      && styles.dateOptionBtnActive,
+                  ]}
+                  onPress={() => setDraft((prev) => {
+                    if (!prev) return prev;
+                    return { ...prev, drawDatesText: toggleDrawDateInText(prev.drawDatesText, opt) };
+                  })}
+                >
+                  <Text
+                    style={[
+                      styles.dateOptionText,
+                      parseDrawDatesForSubmit(draft.drawDatesText).includes(opt)
+                        && styles.dateOptionTextActive,
+                    ]}
+                  >
+                    {opt}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          <Text style={styles.inputLabel}>Draw Numbers (optional, one per line)</Text>
+          <TextInput
+            style={[styles.input, styles.drawNumbersInput]}
+            value={draft.drawNumbersText}
+            onChangeText={(text) => setDraft((prev) => (prev ? { ...prev, drawNumbersText: text } : prev))}
+            autoCapitalize="none"
+            multiline
+            placeholder="5447\n5448"
+            placeholderTextColor={Colors.textSecondary}
+          />
+          {draft.drawNumberOptions.length > 1 && (
+            <View style={styles.dateOptionsRow}>
+              {draft.drawNumberOptions.map((opt) => (
+                <TouchableOpacity
+                  key={opt}
+                  style={[
+                    styles.dateOptionBtn,
+                    parseDrawNumbersForSubmit(draft.drawNumbersText).includes(opt)
+                      && styles.dateOptionBtnActive,
+                  ]}
+                  onPress={() => setDraft((prev) => {
+                    if (!prev) return prev;
+                    return {
+                      ...prev,
+                      drawNumbersText: toggleDrawNumberInText(prev.drawNumbersText, opt),
+                    };
+                  })}
+                >
+                  <Text
+                    style={[
+                      styles.dateOptionText,
+                      parseDrawNumbersForSubmit(draft.drawNumbersText).includes(opt)
+                        && styles.dateOptionTextActive,
+                    ]}
+                  >
+                    {opt}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          <View style={styles.mappingBox}>
+            <Text style={styles.mappingTitle}>Date and Draw Number Mapping</Text>
+            {mappingPairs.length > 0 ? (
+              mappingPairs.map((pair) => (
+                <View key={`${pair.drawDate}-${pair.drawNumber || 'empty'}`} style={styles.mappingRow}>
+                  <Text style={styles.mappingDate}>{pair.drawDate}</Text>
+                  <Text style={styles.mappingArrow}>{'->'}</Text>
+                  <Text style={styles.mappingNumber}>
+                    {pair.drawNumber || '(no draw number)'}
+                  </Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.mappingEmpty}>
+                Add at least one draw date to preview mapping.
+              </Text>
+            )}
+          </View>
+
+          <Text style={styles.inputLabel}>Purchase Date (DD/MM/YYYY HH:MM AM/PM)</Text>
           <TextInput
             style={styles.input}
-            value={draft.drawDate}
-            onChangeText={(text) => setDraft((prev) => (prev ? { ...prev, drawDate: text } : prev))}
-            autoCapitalize="none"
-            placeholder="2026-03-03"
+            value={draft.purchaseDatetime}
+            onChangeText={(text) => setDraft((prev) => (prev ? { ...prev, purchaseDatetime: text } : prev))}
+            autoCapitalize="characters"
+            placeholder="21/02/2026 01:28 PM"
             placeholderTextColor={Colors.textSecondary}
           />
 
@@ -379,7 +635,7 @@ export default function UploadScreen() {
           />
 
           <Text style={styles.inputLabel}>
-            Numbers ({draft.gameType === '4D' ? 'one 4-digit number' : 'one set, space-separated'})
+            Numbers ({draft.gameType === '4D' ? 'one 4-digit number per line' : 'one set per line, space-separated'})
           </Text>
           <TextInput
             style={[styles.input, styles.numbersInput]}
@@ -387,7 +643,7 @@ export default function UploadScreen() {
             onChangeText={(text) => setDraft((prev) => (prev ? { ...prev, numbersText: text } : prev))}
             multiline
             autoCapitalize="none"
-            placeholder={draft.gameType === '4D' ? '1234' : '1 7 12 23 34 45'}
+            placeholder={draft.gameType === '4D' ? '1234\n5678' : '1 7 12 23 34 45\n2 8 14 21 33 47'}
             placeholderTextColor={Colors.textSecondary}
           />
 
@@ -398,7 +654,12 @@ export default function UploadScreen() {
                 <TextInput
                   style={styles.input}
                   value={draft.bigAmount}
-                  onChangeText={(text) => setDraft((prev) => (prev ? { ...prev, bigAmount: text } : prev))}
+                  onChangeText={(text) => setDraft((prev) => {
+                    if (!prev) return prev;
+                    const nextBig = text;
+                    const total = ((Number.parseFloat(nextBig) || 0) + (Number.parseFloat(prev.smallAmount) || 0)).toFixed(2);
+                    return { ...prev, bigAmount: nextBig, totalPrice: total };
+                  })}
                   keyboardType="decimal-pad"
                   placeholder="0.00"
                   placeholderTextColor={Colors.textSecondary}
@@ -409,7 +670,12 @@ export default function UploadScreen() {
                 <TextInput
                   style={styles.input}
                   value={draft.smallAmount}
-                  onChangeText={(text) => setDraft((prev) => (prev ? { ...prev, smallAmount: text } : prev))}
+                  onChangeText={(text) => setDraft((prev) => {
+                    if (!prev) return prev;
+                    const nextSmall = text;
+                    const total = ((Number.parseFloat(prev.bigAmount) || 0) + (Number.parseFloat(nextSmall) || 0)).toFixed(2);
+                    return { ...prev, smallAmount: nextSmall, totalPrice: total };
+                  })}
                   keyboardType="decimal-pad"
                   placeholder="1.00"
                   placeholderTextColor={Colors.textSecondary}
@@ -417,6 +683,11 @@ export default function UploadScreen() {
               </View>
             </View>
           )}
+
+          <View style={styles.totalPriceBox}>
+            <Text style={styles.totalPriceLabel}>Estimated Total Price</Text>
+            <Text style={styles.totalPriceValue}>${draft.totalPrice}</Text>
+          </View>
 
           {draft.rawText ? (
             <View style={styles.rawBox}>
@@ -613,6 +884,77 @@ const styles = StyleSheet.create({
     color: Colors.text,
     backgroundColor: Colors.surfaceAlt,
   },
+  drawDatesInput: {
+    minHeight: 84,
+    textAlignVertical: 'top',
+  },
+  drawNumbersInput: {
+    minHeight: 72,
+    textAlignVertical: 'top',
+  },
+  dateOptionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
+  },
+  dateOptionBtn: {
+    backgroundColor: Colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  dateOptionBtnActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  dateOptionText: {
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    fontWeight: '700',
+  },
+  dateOptionTextActive: {
+    color: '#fff',
+  },
+  mappingBox: {
+    backgroundColor: Colors.surfaceAlt,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.sm,
+  },
+  mappingTitle: {
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  mappingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  mappingDate: {
+    fontSize: Typography.sm,
+    color: Colors.text,
+    fontWeight: '600',
+    minWidth: 100,
+  },
+  mappingArrow: {
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    marginHorizontal: 8,
+  },
+  mappingNumber: {
+    fontSize: Typography.sm,
+    color: Colors.text,
+    fontWeight: '700',
+  },
+  mappingEmpty: {
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+  },
   numbersInput: {
     minHeight: 120,
     textAlignVertical: 'top',
@@ -631,6 +973,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     padding: Spacing.sm,
+  },
+  totalPriceBox: {
+    backgroundColor: Colors.surfaceAlt,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.sm,
+  },
+  totalPriceLabel: {
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  totalPriceValue: {
+    fontSize: Typography.base,
+    color: Colors.text,
+    fontWeight: '700',
   },
   rawTitle: {
     fontSize: Typography.xs,

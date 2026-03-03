@@ -10,17 +10,26 @@ from models import FourDBetType, GameType, TicketStatus, TotoSystemType
 
 class TicketPreviewResponse(BaseModel):
     game_type: str | None
-    draw_date: date | None
+    draw_date: str | None
+    draw_date_options: list[str] = Field(default_factory=list)
+    draw_number: str | None = None
+    draw_number_options: list[str] = Field(default_factory=list)
+    purchase_datetime: str | None = None
     bet_type: str | None
     numbers: Any
+    big_amount: str | None = None
+    small_amount: str | None = None
+    total_price: str | None = None
     raw_ocr_text: str | None = None
 
 
 class TicketUploadResponse(BaseModel):
     id: UUID
+    purchase_group_id: UUID
     status: TicketStatus
     game_type: GameType
     draw_date: date
+    draw_number: str | None = None
     purchase_datetime: datetime
     total_price: Decimal
     bet_label: str | None
@@ -30,10 +39,22 @@ class TicketUploadResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TicketConfirmBatchResponse(BaseModel):
+    purchase_group_id: UUID
+    created_count: int
+    ticket_ids: list[UUID] = Field(default_factory=list)
+    pending_count: int = 0
+    won_count: int = 0
+    lost_count: int = 0
+    message: str
+
+
 class TicketListItem(BaseModel):
     id: UUID
+    purchase_group_id: UUID
     game_type: GameType
     draw_date: date
+    draw_number: str | None = None
     purchase_datetime: datetime
     total_price: Decimal
     status: TicketStatus
@@ -71,9 +92,11 @@ class NotificationOut(BaseModel):
 
 class TicketDetail(BaseModel):
     id: UUID
+    purchase_group_id: UUID
     game_type: GameType
     purchase_datetime: datetime
     draw_date: date
+    draw_number: str | None = None
     total_price: Decimal
     status: TicketStatus
     created_at: datetime

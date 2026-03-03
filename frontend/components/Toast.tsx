@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text } from 'react-native';
 
 import { type ToastType } from '../hooks/useToast';
