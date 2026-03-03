@@ -250,6 +250,7 @@ async def list_tickets(
         .options(
             selectinload(Ticket.four_d_ticket),
             selectinload(Ticket.toto_ticket),
+            selectinload(Ticket.toto_numbers),
             selectinload(Ticket.notifications),
         )
     )
