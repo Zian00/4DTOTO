@@ -1,9 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -50,7 +47,6 @@ export default function RootLayout() {
           name="ticket/[id]"
           options={{
             title: 'Ticket Detail',
-            headerBackTitle: 'Back',
             headerStyle: { backgroundColor: Colors.primary },
             headerTintColor: '#fff',
           }}
@@ -59,49 +55,53 @@ export default function RootLayout() {
 
       <ToastContainer toast={toast} fadeAnim={fadeAnim} />
 
-      {/* First-launch welcome modal */}
-      <Modal visible={showWelcome} transparent animationType="fade">
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Welcome to 4D/TOTO!</Text>
-            <Text style={styles.modalSubtitle}>
-              Enter a nickname to personalise your experience.
-            </Text>
-            <TextInput
-              ref={inputRef}
-              style={styles.input}
-              placeholder="e.g. John"
-              placeholderTextColor={Colors.textSecondary}
-              value={nameInput}
-              onChangeText={setNameInput}
-              maxLength={30}
-              autoFocus
-              onSubmitEditing={handleSaveName}
-              returnKeyType="done"
-            />
-            <TouchableOpacity style={styles.modalBtn} onPress={handleSaveName}>
-              <Text style={styles.modalBtnText}>Get Started</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setShowWelcome(false)}
-              style={styles.skipBtn}
-            >
-              <Text style={styles.skipText}>Skip</Text>
-            </TouchableOpacity>
+      {/* First-launch welcome overlay — using View instead of Modal to avoid
+          New Architecture (Fabric) boolean prop casting crash on Android */}
+      {showWelcome && (
+        <View style={styles.overlayBackdrop}>
+          <View style={styles.overlayInner}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Welcome to 4D/TOTO!</Text>
+              <Text style={styles.modalSubtitle}>
+                Enter a nickname to personalise your experience.
+              </Text>
+              <TextInput
+                ref={inputRef}
+                style={styles.input}
+                placeholder="e.g. John"
+                placeholderTextColor={Colors.textSecondary}
+                value={nameInput}
+                onChangeText={setNameInput}
+                maxLength={30}
+                autoFocus
+                onSubmitEditing={handleSaveName}
+                returnKeyType="done"
+              />
+              <TouchableOpacity style={styles.modalBtn} onPress={handleSaveName}>
+                <Text style={styles.modalBtnText}>Get Started</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setShowWelcome(false)}
+                style={styles.skipBtn}
+              >
+                <Text style={styles.skipText}>Skip</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
+        </View>
+      )}
     </ToastContext.Provider>
   );
 }
 
 const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
+  overlayBackdrop: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.5)',
+    zIndex: 999,
+  },
+  overlayInner: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: Spacing.lg,
