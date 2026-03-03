@@ -1,0 +1,38 @@
+{
+  "2026-02-27": {
+    "draw_date": "2026-02-27",
+    "draw_no": "3721",
+    "winning_numbers": [3, 7, 12, 23, 34, 45],
+    "additional_number": 18
+  },
+  "2026-02-23": {
+    "draw_date": "2026-02-23",
+    "draw_no": "3720",
+    "winning_numbers": [1, 9, 15, 28, 36, 49],
+    "additional_number": 22
+  },
+  "2026-02-20": {
+    "draw_date": "2026-02-20",
+    "draw_no": "3719",
+    "winning_numbers": [5, 11, 19, 27, 38, 44],
+    "additional_number": 31
+  },
+  "2026-02-16": {
+    "draw_date": "2026-02-16",
+    "draw_no": "3718",
+    "winning_numbers": [2, 8, 14, 21, 33, 47],
+    "additional_number": 40
+  },
+  "2026-02-13": {
+    "draw_date": "2026-02-13",
+    "draw_no": "3717",
+    "winning_numbers": [6, 13, 20, 29, 35, 42],
+    "additional_number": 10
+  },
+  "2026-02-09": {
+    "draw_date": "2026-02-09",
+    "draw_no": "3716",
+    "winning_numbers": [4, 16, 24, 32, 39, 46],
+    "additional_number": 17
+  }
+}

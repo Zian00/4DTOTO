@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "4D/TOTO",
+    "slug": "fourdtoto",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "fourdtoto",
+    "userInterfaceStyle": "light",
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow 4D/TOTO to access your photos to scan lottery tickets.",
+          "cameraPermission": "Allow 4D/TOTO to use your camera to scan lottery tickets."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

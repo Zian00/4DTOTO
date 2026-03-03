@@ -1,2 +1,46 @@
 *.mcp.json
 CLAUDE.md
+
+# Python
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.pyc
+backend/**/*.pyc
+backend/.env
+backend/uploads/
+
+# Anaconda / venv
+backend/venv/
+backend/.venv/
+
+# Alembic
+backend/migrations/versions/__pycache__/
+
+# Node
+frontend/node_modules/
+frontend/.expo/
+frontend/dist/
+frontend/web-build/
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
