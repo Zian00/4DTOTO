@@ -1,6 +1,47 @@
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
+type ConstantsLike = {
+  expoConfig?: { hostUri?: string };
+  expoGoConfig?: { debuggerHost?: string };
+  manifest2?: { extra?: { expoGo?: { debuggerHost?: string } } };
+  manifest?: { debuggerHost?: string };
+};
+
+function hostFromDebugHost(debuggerHost?: string): string | null {
+  if (!debuggerHost) return null;
+  return debuggerHost.split(':')[0] || null;
+}
+
+function detectExpoHost(): string | null {
+  const c = Constants as unknown as ConstantsLike;
+
+  const hostFromExpoConfig = hostFromDebugHost(c.expoConfig?.hostUri);
+  if (hostFromExpoConfig) return hostFromExpoConfig;
+
+  const hostFromExpoGoConfig = hostFromDebugHost(c.expoGoConfig?.debuggerHost);
+  if (hostFromExpoGoConfig) return hostFromExpoGoConfig;
+
+  const hostFromManifest2 = hostFromDebugHost(c.manifest2?.extra?.expoGo?.debuggerHost);
+  if (hostFromManifest2) return hostFromManifest2;
+
+  const hostFromLegacyManifest = hostFromDebugHost(c.manifest?.debuggerHost);
+  if (hostFromLegacyManifest) return hostFromLegacyManifest;
+
+  return null;
+}
+
+function normalizeApiUrl(rawUrl: string): string {
+  if (Platform.OS === 'web') return rawUrl;
+  const host = detectExpoHost();
+  if (!host) return rawUrl;
+  return rawUrl
+    .replace('://localhost', `://${host}`)
+    .replace('://127.0.0.1', `://${host}`);
+}
+
+const RAW_API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
+const API_URL = normalizeApiUrl(RAW_API_URL);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
