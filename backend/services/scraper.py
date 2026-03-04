@@ -276,6 +276,77 @@ def _extract_draw_number(text: str) -> str:
     return m.group(0) if m else text.strip()
 
 
+async def scrape_all_historical(game_type: str, db: AsyncSession) -> int:
+    """
+    Fetch every draw found in the draw-list HTML for game_type and cache
+    any that are not already stored in the database.
+    Returns the number of newly cached draws.
+    """
+    draw_list_html = await _http_get(FRAGMENT_URLS[game_type]["draw_list"])
+    if not draw_list_html:
+        return 0
+
+    options = _parse_all_draw_options(draw_list_html)
+    if not options:
+        print(f"[scraper] no draw options parsed for {game_type}")
+        return 0
+
+    existing = await _get_all_cached_dates(game_type, db)
+    new_count = 0
+
+    for draw_date_str, query_string in options:
+        if draw_date_str in existing:
+            continue
+
+        await asyncio.sleep(SCRAPE_DELAY)
+
+        url = _build_single_result_url(game_type, query_string)
+        html = await _http_get(url)
+        if not html:
+            continue
+
+        result = _parse_single_result_page(game_type, html)
+        if not result or not result.get("draw_date"):
+            continue
+
+        await _cache_result(game_type, result["draw_date"], result, db)
+        existing.add(result["draw_date"])
+        new_count += 1
+        print(f"[scraper] cached {game_type} {result['draw_date']}")
+
+    return new_count
+
+
+def _parse_all_draw_options(draw_list_html: str) -> list[tuple[str, str]]:
+    """
+    Parse the draw-list HTML and return [(draw_date_str, query_string), ...]
+    for every option whose text can be parsed as a YYYY-MM-DD date.
+    """
+    soup = BeautifulSoup(draw_list_html, "html.parser")
+    select_el = soup.find("select")
+    if not select_el:
+        return []
+
+    results: list[tuple[str, str]] = []
+    for option in select_el.find_all("option"):
+        qs = option.get("querystring") or option.get("value", "")
+        if not qs:
+            continue
+        date_str = _parse_draw_date(option.get_text(strip=True))
+        # _parse_draw_date returns the original text on failure; validate shape
+        if re.match(r"\d{4}-\d{2}-\d{2}$", date_str):
+            results.append((date_str, qs))
+
+    return results
+
+
+async def _get_all_cached_dates(game_type: str, db: AsyncSession) -> set[str]:
+    """Return all draw date strings already stored in the database."""
+    stmt = select(DrawResult.draw_date).where(DrawResult.game_type == game_type)
+    rows = (await db.execute(stmt)).scalars().all()
+    return {d.isoformat() for d in rows}
+
+
 async def _get_cached(game_type: str, draw_date_str: str, db: AsyncSession) -> dict | None:
     try:
         draw_date = date.fromisoformat(draw_date_str)

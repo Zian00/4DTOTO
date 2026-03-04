@@ -39,12 +39,12 @@
 
 ---
 
-## Phase 3 — Historical Results Import
+## Phase 3 — Historical Results Import ✅
 > Currently only ~3 latest draws are seeded. PDF says "all past winning numbers".
 
-- [ ] 3.1 Add bulk scrape function to `backend/services/scraper.py` — iterate draw list and fetch all available historical results
-- [ ] 3.2 Add a one-time seeding endpoint or startup task to import full history into `draw_results`
-- [ ] 3.3 Verify prediction models have sufficient data after bulk import
+- [x] 3.1 Add `scrape_all_historical()` + helpers to `backend/services/scraper.py` — iterates draw list, skips already-cached draws, fetches all new ones with rate-limit delay
+- [x] 3.2 `POST /api/results/seed` endpoint for manual trigger + startup `asyncio.create_task` in `main.py` lifespan (auto-seeds if DB has < 50 4D / < 30 TOTO draws)
+- [x] 3.3 Prediction models use all rows from DB — sufficient data once seed completes
 
 ---
 

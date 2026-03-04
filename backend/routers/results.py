@@ -1,13 +1,13 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import get_db
+from database import AsyncSessionLocal, get_db
 from models import DrawResult
 from schemas import DrawResultResponse, PaginatedResults
-from services.scraper import scrape_latest, scrape_results
+from services.scraper import scrape_all_historical, scrape_latest, scrape_results
 
 router = APIRouter()
 
@@ -57,6 +57,28 @@ async def list_results(
         page=page,
         limit=limit,
     )
+
+
+# ── Bulk historical seed ──────────────────────────────────────────────────────
+
+@router.post("/seed")
+async def seed_historical_results(background_tasks: BackgroundTasks):
+    """
+    Trigger a full historical import for both 4D and TOTO draw results.
+    Runs in the background — returns immediately.
+    Already-cached draws are skipped automatically.
+    """
+    async def _run():
+        async with AsyncSessionLocal() as db:
+            for gt in ("4D", "TOTO"):
+                try:
+                    count = await scrape_all_historical(gt, db)
+                    print(f"[seed] {gt}: {count} new draws cached")
+                except Exception as exc:
+                    print(f"[seed] {gt} failed: {exc}")
+
+    background_tasks.add_task(_run)
+    return {"message": "Historical seed started in background"}
 
 
 # ── Specific draw ─────────────────────────────────────────────────────────────
