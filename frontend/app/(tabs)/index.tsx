@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -41,6 +41,43 @@ type OcrDraft = {
   smallAmount: string;
   totalPrice: string;
   rawText: string;
+};
+
+type ReviewField =
+  | 'gameType'
+  | 'betType'
+  | 'purchaseDatetime'
+  | 'numbersText'
+  | 'drawDates'
+  | 'drawNumbersText'
+  | 'bigAmount'
+  | 'smallAmount';
+
+type FieldConfidence = 'auto' | 'uncertain';
+type DraftConfidence = Record<ReviewField, FieldConfidence>;
+type FieldErrors = Partial<Record<ReviewField, string>>;
+type FieldTouched = Partial<Record<ReviewField, boolean>>;
+
+const BET_TYPES_4D = ['ORDINARY', 'IBET'] as const;
+const BET_TYPES_TOTO = [
+  'STANDARD',
+  'SYSTEM_7',
+  'SYSTEM_8',
+  'SYSTEM_9',
+  'SYSTEM_10',
+  'SYSTEM_11',
+  'SYSTEM_12',
+] as const;
+
+const EMPTY_DRAFT_CONFIDENCE: DraftConfidence = {
+  gameType: 'uncertain',
+  betType: 'uncertain',
+  purchaseDatetime: 'uncertain',
+  numbersText: 'uncertain',
+  drawDates: 'uncertain',
+  drawNumbersText: 'uncertain',
+  bigAmount: 'uncertain',
+  smallAmount: 'uncertain',
 };
 
 function todayDmy(): string {
@@ -99,6 +136,45 @@ function normalizeDateTimeForEditor(raw: string | null | undefined): string {
     return `${day}/${month}/${year} ${String(hour12).padStart(2, '0')}:${minute} ${ampm}`;
   }
   return nowDmyHmAmPm();
+}
+
+function formatDateTimeForEditor(date: Date): string {
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const yyyy = String(date.getFullYear());
+  const hour24 = date.getHours();
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  const ampm = hour24 >= 12 ? 'PM' : 'AM';
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return `${dd}/${mm}/${yyyy} ${String(hour12).padStart(2, '0')}:${minute} ${ampm}`;
+}
+
+function parseEditorDateTime(raw: string | null | undefined): Date | null {
+  if (!raw) return null;
+  const token = raw.trim().toUpperCase();
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})\s+(AM|PM)$/.exec(token);
+  if (!match) return null;
+
+  const day = Number.parseInt(match[1], 10);
+  const month = Number.parseInt(match[2], 10) - 1;
+  const year = Number.parseInt(match[3], 10);
+  let hour = Number.parseInt(match[4], 10);
+  const minute = Number.parseInt(match[5], 10);
+  const ampm = match[6];
+
+  if (hour < 1 || hour > 12 || minute < 0 || minute > 59) return null;
+  if (ampm === 'PM' && hour !== 12) hour += 12;
+  if (ampm === 'AM' && hour === 12) hour = 0;
+
+  const date = new Date(year, month, day, hour, minute, 0, 0);
+  if (
+    date.getFullYear() !== year
+    || date.getMonth() !== month
+    || date.getDate() !== day
+  ) {
+    return null;
+  }
+  return date;
 }
 
 function formatNumbersForEditor(numbers: unknown, gameType: GameType): string {
@@ -166,11 +242,8 @@ function parseDrawNumbersForSubmit(text: string): string[] {
   return out;
 }
 
-function toggleDrawNumberInText(text: string, value: string): string {
-  const current = parseDrawNumbersForSubmit(text);
-  const exists = current.includes(value);
-  const next = exists ? current.filter((d) => d !== value) : [...current, value];
-  return next.join('\n');
+function getBetTypeOptions(gameType: GameType): readonly string[] {
+  return gameType === '4D' ? BET_TYPES_4D : BET_TYPES_TOTO;
 }
 
 function buildDateDrawPairs(drawDateOptions: string[], drawNumbersText: string): Array<{
@@ -178,19 +251,45 @@ function buildDateDrawPairs(drawDateOptions: string[], drawNumbersText: string):
   drawNumber: string;
 }> {
   const drawNumbers = parseDrawNumbersForSubmit(drawNumbersText);
-  return drawDateOptions.map((drawDate, idx) => ({
-    drawDate,
+  const len = Math.max(drawDateOptions.length, drawNumbers.length);
+  return Array.from({ length: len }, (_, idx) => ({
+    drawDate: drawDateOptions[idx] ?? '',
     drawNumber: drawNumbers[idx] ?? '',
   }));
 }
 
 function normalizeBetType(gameType: GameType, betTypeRaw: string): string {
-  const token = betTypeRaw.trim().toUpperCase();
+  const token = betTypeRaw.trim().toUpperCase().replace(/[\s-]+/g, '_');
   if (!token) return gameType === '4D' ? 'ORDINARY' : 'STANDARD';
   if (gameType === '4D') {
-    return token === 'IBET' || token === 'I-BET' ? 'IBET' : 'ORDINARY';
+    return token === 'IBET' || token === 'I_BET' ? 'IBET' : 'ORDINARY';
   }
-  return token;
+  if (token === 'STANDARD') return 'STANDARD';
+  const match = /^SYSTEM_?([7-9]|1[0-2])$/.exec(token);
+  if (match) return `SYSTEM_${match[1]}`;
+  return 'STANDARD';
+}
+
+function hasContent(value: string | null | undefined): boolean {
+  return Boolean(value && value.trim());
+}
+
+function buildDraftConfidence(response: TicketPreviewResponse, draft: OcrDraft): DraftConfidence {
+  const hasDrawDates = (response.draw_date_options ?? []).some((d) => hasContent(d))
+    || hasContent(response.draw_date);
+  const hasDrawNumbers = (response.draw_number_options ?? []).some((d) => hasContent(d))
+    || hasContent(response.draw_number);
+
+  return {
+    gameType: hasContent(response.game_type) ? 'auto' : 'uncertain',
+    betType: hasContent(response.bet_type) ? 'auto' : 'uncertain',
+    purchaseDatetime: hasContent(response.purchase_datetime) ? 'auto' : 'uncertain',
+    numbersText: draft.numbersText.trim() ? 'auto' : 'uncertain',
+    drawDates: hasDrawDates ? 'auto' : 'uncertain',
+    drawNumbersText: hasDrawNumbers ? 'auto' : 'uncertain',
+    bigAmount: hasContent(response.big_amount) ? 'auto' : 'uncertain',
+    smallAmount: hasContent(response.small_amount) ? 'auto' : 'uncertain',
+  };
 }
 
 function toDraft(response: TicketPreviewResponse): OcrDraft {
@@ -235,11 +334,94 @@ export default function UploadScreen() {
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [uploadMsg, setUploadMsg] = useState('');
   const [draft, setDraft] = useState<OcrDraft | null>(null);
+  const [draftConfidence, setDraftConfidence] = useState<DraftConfidence>(EMPTY_DRAFT_CONFIDENCE);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [fieldTouched, setFieldTouched] = useState<FieldTouched>({});
+  const [isRawExpanded, setIsRawExpanded] = useState(false);
   const mappingPairs = draft
     ? buildDateDrawPairs(draft.drawDateOptions, draft.drawNumbersText)
     : [];
+  const parsedDrawNumbers = useMemo(
+    () => (draft ? parseDrawNumbersForSubmit(draft.drawNumbersText) : []),
+    [draft?.drawNumbersText],
+  );
+  const parsedNumberRows = useMemo(
+    () => (draft ? parseNumbersForSubmit(draft.numbersText, draft.gameType) : []),
+    [draft?.numbersText, draft?.gameType],
+  );
+  const numberPreviewRows = useMemo(
+    () =>
+      parsedNumberRows.map((row, idx) => {
+        if (!draft) return { key: `row-${idx}`, text: row.join(' '), isValid: false };
+        let isValid = false;
+        if (draft.gameType === '4D') {
+          isValid = /^\d{4}$/.test(row[0] ?? '');
+        } else {
+          const normalizedBetType = normalizeBetType(draft.gameType, draft.betType);
+          const inRange = row.length >= 6 && row.length <= 12;
+          if (!inRange) {
+            isValid = false;
+          } else if (normalizedBetType === 'STANDARD') {
+            isValid = row.length === 6;
+          } else {
+            const systemMatch = /^SYSTEM_(\d+)$/.exec(normalizedBetType);
+            const expected = systemMatch ? Number.parseInt(systemMatch[1], 10) : 6;
+            isValid = row.length === expected;
+          }
+        }
+        return {
+          key: `${row.join('-')}-${idx}`,
+          text: draft.gameType === '4D' ? String(row[0] ?? '') : row.join(' '),
+          isValid,
+        };
+      }),
+    [parsedNumberRows, draft],
+  );
+  const parsedValidNumberCount = numberPreviewRows.filter((row) => row.isValid).length;
+  const parsedInvalidNumberCount = numberPreviewRows.length - parsedValidNumberCount;
+  const confirmSummary = useMemo(() => {
+    if (!draft) return '';
+    const numberPart = draft.gameType === '4D'
+      ? `${parsedValidNumberCount} numbers`
+      : `${parsedValidNumberCount} sets`;
+    const drawDatesPart = `${draft.drawDateOptions.length} draw dates`;
+    if (draft.gameType !== '4D') return `${numberPart} | ${drawDatesPart}`;
+    const total = Number.parseFloat(draft.totalPrice);
+    const totalPart = Number.isFinite(total) ? `$${total.toFixed(2)}` : '$0.00';
+    return `${numberPart} | ${drawDatesPart} | ${totalPart}`;
+  }, [draft, parsedValidNumberCount]);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [pickerValue, setPickerValue] = useState(new Date());
+  const [showPurchasePicker, setShowPurchasePicker] = useState(false);
+  const [purchasePickerValue, setPurchasePickerValue] = useState(new Date());
+  const [androidPurchaseMode, setAndroidPurchaseMode] = useState<'date' | 'time'>('date');
+
+  function clearFieldError(field: ReviewField) {
+    setFieldErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  }
+
+  function markFieldTouched(field: ReviewField) {
+    setFieldTouched((prev) => (prev[field] ? prev : { ...prev, [field]: true }));
+  }
+
+  function getFieldSignal(field: ReviewField): {
+    showAuto: boolean;
+    showNeedsReview: boolean;
+    error?: string;
+  } {
+    const touched = Boolean(fieldTouched[field]);
+    const confidence = draftConfidence[field];
+    return {
+      showAuto: confidence === 'auto' && !touched,
+      showNeedsReview: confidence === 'uncertain' && !touched,
+      error: fieldErrors[field],
+    };
+  }
 
 
   useFocusEffect(
@@ -266,6 +448,13 @@ export default function UploadScreen() {
       setUploadState('idle');
       setUploadMsg('');
       setDraft(null);
+      setDraftConfidence(EMPTY_DRAFT_CONFIDENCE);
+      setFieldErrors({});
+      setFieldTouched({});
+      setIsRawExpanded(false);
+      setShowDatePicker(false);
+      setShowPurchasePicker(false);
+      setAndroidPurchaseMode('date');
     }
   }
 
@@ -286,6 +475,13 @@ export default function UploadScreen() {
       setUploadState('idle');
       setUploadMsg('');
       setDraft(null);
+      setDraftConfidence(EMPTY_DRAFT_CONFIDENCE);
+      setFieldErrors({});
+      setFieldTouched({});
+      setIsRawExpanded(false);
+      setShowDatePicker(false);
+      setShowPurchasePicker(false);
+      setAndroidPurchaseMode('date');
     }
   }
 
@@ -299,6 +495,10 @@ export default function UploadScreen() {
       const response = await uploadTicket(selectedUri);
       const nextDraft = toDraft(response);
       setDraft(nextDraft);
+      setDraftConfidence(buildDraftConfidence(response, nextDraft));
+      setFieldErrors({});
+      setFieldTouched({});
+      setIsRawExpanded(false);
       setUploadState('review');
 
       if (nextDraft.numbersText.trim()) {
@@ -318,63 +518,83 @@ export default function UploadScreen() {
 
   async function handleConfirm() {
     if (!draft || !selectedUri) return;
+    const nextErrors: FieldErrors = {};
 
-    const drawDates = draft.drawDateOptions;
+    const drawDates = draft.drawDateOptions.filter(Boolean);
     if (drawDates.length === 0) {
-      Alert.alert('Missing draw dates', 'Add at least one draw date.');
-      return;
+      nextErrors.drawDates = 'Add at least one draw date.';
     }
+
     const drawNumbers = parseDrawNumbersForSubmit(draft.drawNumbersText);
     if (drawNumbers.length > drawDates.length) {
-      Alert.alert(
-        'Invalid draw numbers',
-        'Draw numbers cannot exceed the number of draw dates.',
-      );
-      return;
+      nextErrors.drawNumbersText = 'Draw numbers cannot exceed the number of draw dates.';
     }
+
     const purchaseDatetime = draft.purchaseDatetime.trim().toUpperCase();
     if (
-      purchaseDatetime &&
-      !/^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}\s+(AM|PM)$/.test(purchaseDatetime)
+      purchaseDatetime
+      && !/^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}\s+(AM|PM)$/.test(purchaseDatetime)
     ) {
-      Alert.alert('Invalid purchase date', 'Purchase date must be DD/MM/YYYY HH:MM AM/PM.');
-      return;
+      nextErrors.purchaseDatetime = 'Use DD/MM/YYYY HH:MM AM/PM.';
+    }
+
+    const normalizedBetType = normalizeBetType(draft.gameType, draft.betType);
+    if (!getBetTypeOptions(draft.gameType).includes(normalizedBetType)) {
+      nextErrors.betType = 'Select a valid bet type.';
     }
 
     const parsedRows = parseNumbersForSubmit(draft.numbersText, draft.gameType);
-    if (parsedRows.length === 0) {
-      Alert.alert('Missing numbers', 'Please enter at least one number set.');
-      return;
-    }
-
     let submitNumbers: string[][] = [];
-    if (draft.gameType === '4D') {
-      const validRows = parsedRows.filter((row) => /^\d{4}$/.test(row[0] ?? ''));
-      if (validRows.length === 0) {
-        Alert.alert('Invalid 4D numbers', 'Enter one or more valid 4-digit numbers.');
-        return;
+    if (parsedRows.length === 0) {
+      nextErrors.numbersText = 'Please enter at least one number set.';
+    } else if (draft.gameType === '4D') {
+      const invalidRows = parsedRows.filter((row) => !/^\d{4}$/.test(row[0] ?? ''));
+      if (invalidRows.length > 0) {
+        nextErrors.numbersText = 'Every 4D row must be exactly 4 digits.';
+      } else {
+        submitNumbers = parsedRows;
       }
-      submitNumbers = validRows;
     } else {
-      const badRow = parsedRows.find((row) => row.length < 6);
+      const badRow = parsedRows.find((row) => row.length < 6 || row.length > 12);
       if (badRow) {
-        Alert.alert('Invalid TOTO numbers', 'Each TOTO set must contain at least 6 numbers.');
-        return;
+        nextErrors.numbersText = 'Each TOTO set must contain 6 to 12 numbers.';
+      } else {
+        if (normalizedBetType === 'STANDARD') {
+          const mismatchRow = parsedRows.find((row) => row.length !== 6);
+          if (mismatchRow) {
+            nextErrors.betType = 'STANDARD requires exactly 6 numbers per set.';
+          }
+        } else {
+          const systemMatch = /^SYSTEM_(\d+)$/.exec(normalizedBetType);
+          if (systemMatch) {
+            const expected = Number.parseInt(systemMatch[1], 10);
+            const mismatchRow = parsedRows.find((row) => row.length !== expected);
+            if (mismatchRow) {
+              nextErrors.betType = `${normalizedBetType} requires exactly ${expected} numbers per set.`;
+            }
+          }
+        }
+        submitNumbers = parsedRows;
       }
-      submitNumbers = parsedRows;
     }
 
     if (draft.gameType === '4D') {
       const decimalPattern = /^\d+(\.\d{1,2})?$/;
       if (draft.bigAmount.trim() && !decimalPattern.test(draft.bigAmount.trim())) {
-        Alert.alert('Invalid Big Amount', 'Use numeric value with up to 2 decimal places.');
-        return;
+        nextErrors.bigAmount = 'Use numeric value with up to 2 decimal places.';
       }
       if (draft.smallAmount.trim() && !decimalPattern.test(draft.smallAmount.trim())) {
-        Alert.alert('Invalid Small Amount', 'Use numeric value with up to 2 decimal places.');
-        return;
+        nextErrors.smallAmount = 'Use numeric value with up to 2 decimal places.';
       }
     }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors);
+      showToast('Please fix highlighted fields before confirming.', 'error');
+      return;
+    }
+
+    setFieldErrors({});
 
     setUploadState('confirming');
     setUploadMsg('Confirming ticket and starting result checks...');
@@ -385,7 +605,7 @@ export default function UploadScreen() {
         draw_dates: drawDates,
         draw_numbers: drawNumbers,
         purchase_datetime: purchaseDatetime || null,
-        bet_type: normalizeBetType(draft.gameType, draft.betType),
+        bet_type: normalizedBetType,
         numbers: submitNumbers,
         big_amount: draft.gameType === '4D' ? draft.bigAmount.trim() || null : null,
         small_amount: draft.gameType === '4D' ? draft.smallAmount.trim() || null : null,
@@ -393,6 +613,13 @@ export default function UploadScreen() {
       });
 
       setDraft(null);
+      setDraftConfidence(EMPTY_DRAFT_CONFIDENCE);
+      setFieldErrors({});
+      setFieldTouched({});
+      setIsRawExpanded(false);
+      setShowDatePicker(false);
+      setShowPurchasePicker(false);
+      setAndroidPurchaseMode('date');
       setSelectedUri(null);
       setUploadState('done');
       setUploadMsg(
@@ -421,12 +648,69 @@ export default function UploadScreen() {
     const mm = String(selected.getMonth() + 1).padStart(2, '0');
     const yyyy = String(selected.getFullYear());
     const dateStr = `${dd}/${mm}/${yyyy}`;
-    setDraft((prev) => {
-      if (!prev) return prev;
-      if (prev.drawDateOptions.includes(dateStr)) return prev;
-      return { ...prev, drawDateOptions: [...prev.drawDateOptions, dateStr] };
-    });
     if (Platform.OS === 'ios') setShowDatePicker(false);
+    if (draft?.drawDateOptions.includes(dateStr)) {
+      showToast(`${dateStr} is already in the list.`, 'info');
+      return;
+    }
+    markFieldTouched('drawDates');
+    clearFieldError('drawDates');
+    setDraft((prev) => prev ? { ...prev, drawDateOptions: [...prev.drawDateOptions, dateStr] } : prev);
+  }
+
+  function openPurchasePicker() {
+    const current = parseEditorDateTime(draft?.purchaseDatetime);
+    setPurchasePickerValue(current ?? new Date());
+    setAndroidPurchaseMode('date');
+    setShowPurchasePicker(true);
+  }
+
+  function applyPurchaseDateTime(next: Date) {
+    markFieldTouched('purchaseDatetime');
+    clearFieldError('purchaseDatetime');
+    const formatted = formatDateTimeForEditor(next);
+    setDraft((prev) => (prev ? { ...prev, purchaseDatetime: formatted } : prev));
+  }
+
+  function onPurchaseDateTimeChange(event: DateTimePickerEvent, selected?: Date) {
+    if (!selected) {
+      if (event.type === 'dismissed' && Platform.OS === 'android') {
+        setShowPurchasePicker(false);
+        setAndroidPurchaseMode('date');
+      }
+      return;
+    }
+
+    if (Platform.OS === 'android') {
+      if (event.type === 'dismissed') {
+        setShowPurchasePicker(false);
+        setAndroidPurchaseMode('date');
+        return;
+      }
+
+      if (androidPurchaseMode === 'date') {
+        const next = new Date(purchasePickerValue);
+        next.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
+        setPurchasePickerValue(next);
+        setAndroidPurchaseMode('time');
+        return;
+      }
+
+      const next = new Date(purchasePickerValue);
+      next.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
+      setPurchasePickerValue(next);
+      applyPurchaseDateTime(next);
+      setAndroidPurchaseMode('date');
+      setShowPurchasePicker(false);
+      return;
+    }
+
+    setPurchasePickerValue(selected);
+  }
+
+  function confirmPurchasePickerIOS() {
+    applyPurchaseDateTime(purchasePickerValue);
+    setShowPurchasePicker(false);
   }
 
   function reset() {
@@ -434,6 +718,13 @@ export default function UploadScreen() {
     setUploadState('idle');
     setUploadMsg('');
     setDraft(null);
+    setDraftConfidence(EMPTY_DRAFT_CONFIDENCE);
+    setFieldErrors({});
+    setFieldTouched({});
+    setIsRawExpanded(false);
+    setShowDatePicker(false);
+    setShowPurchasePicker(false);
+    setAndroidPurchaseMode('date');
   }
 
   return (
@@ -491,225 +782,362 @@ export default function UploadScreen() {
           <Text style={styles.reviewTitle}>Review OCR Output</Text>
           <Text style={styles.reviewHint}>Edit any field before confirming.</Text>
 
-          <View style={styles.gameRow}>
-            {(['4D', 'TOTO'] as const).map((gt) => (
-              <TouchableOpacity
-                key={gt}
-                style={[styles.gameBtn, draft.gameType === gt && styles.gameBtnActive]}
-                onPress={() => setDraft((prev) => (prev ? { ...prev, gameType: gt } : prev))}
-              >
-                <Text style={[styles.gameBtnText, draft.gameType === gt && styles.gameBtnTextActive]}>
-                  {gt}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionTitle}>Ticket Identity</Text>
 
-          {/* 1. Bet Type */}
-          <Text style={styles.inputLabel}>Bet Type</Text>
-          <TextInput
-            style={styles.input}
-            value={draft.betType}
-            onChangeText={(text) => setDraft((prev) => (prev ? { ...prev, betType: text } : prev))}
-            autoCapitalize="none"
-            placeholder={draft.gameType === 'TOTO' ? 'STANDARD or SYSTEM_7..SYSTEM_12' : 'ORDINARY or IBET'}
-            placeholderTextColor={Colors.textSecondary}
-          />
-
-          {/* 2. Numbers */}
-          <Text style={styles.inputLabel}>
-            Numbers ({draft.gameType === '4D' ? 'one 4-digit number per line' : 'one set per line, space-separated'})
-          </Text>
-          <TextInput
-            style={[styles.input, styles.numbersInput]}
-            value={draft.numbersText}
-            onChangeText={(text) => setDraft((prev) => (prev ? { ...prev, numbersText: text } : prev))}
-            multiline
-            autoCapitalize="none"
-            placeholder={draft.gameType === '4D' ? '1234\n5678' : '1 7 12 23 34 45\n2 8 14 21 33 47'}
-            placeholderTextColor={Colors.textSecondary}
-          />
-
-          {/* 3. Big / Small amounts + Total (4D only) */}
-          {draft.gameType === '4D' && (
-            <View style={styles.amountRow}>
-              <View style={styles.amountCol}>
-                <Text style={styles.inputLabel}>Big ($)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={draft.bigAmount}
-                  onChangeText={(text) => setDraft((prev) => {
-                    if (!prev) return prev;
-                    const total = ((Number.parseFloat(text) || 0) + (Number.parseFloat(prev.smallAmount) || 0)).toFixed(2);
-                    return { ...prev, bigAmount: text, totalPrice: total };
-                  })}
-                  keyboardType="decimal-pad"
-                  placeholder="0.00"
-                  placeholderTextColor={Colors.textSecondary}
-                />
-              </View>
-              <View style={styles.amountCol}>
-                <Text style={styles.inputLabel}>Small ($)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={draft.smallAmount}
-                  onChangeText={(text) => setDraft((prev) => {
-                    if (!prev) return prev;
-                    const total = ((Number.parseFloat(prev.bigAmount) || 0) + (Number.parseFloat(text) || 0)).toFixed(2);
-                    return { ...prev, smallAmount: text, totalPrice: total };
-                  })}
-                  keyboardType="decimal-pad"
-                  placeholder="1.00"
-                  placeholderTextColor={Colors.textSecondary}
-                />
-              </View>
-              <View style={styles.amountCol}>
-                <Text style={styles.inputLabel}>Price ($)</Text>
-                <View style={[styles.input, styles.totalInline]}>
-                  <Text style={styles.totalInlineText}>{draft.totalPrice}</Text>
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* 4. Draw Dates */}
-          <Text style={styles.inputLabel}>Draw Dates</Text>
-          <View style={styles.dateChipsContainer}>
-            {draft.drawDateOptions.map((opt) => (
-              <View key={opt} style={styles.dateChip}>
-                <Text style={styles.dateChipText}>{opt}</Text>
+            <Text style={styles.inputLabel}>Game Type</Text>
+            <View style={[styles.gameRow, getFieldSignal('gameType').showNeedsReview && styles.fieldNeedsReview]}>
+              {(['4D', 'TOTO'] as const).map((gt) => (
                 <TouchableOpacity
-                  onPress={() =>
-                    setDraft((prev) =>
-                      prev
-                        ? { ...prev, drawDateOptions: prev.drawDateOptions.filter((d) => d !== opt) }
-                        : prev,
-                    )
-                  }
-                  hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-                >
-                  <Text style={styles.dateChipRemove}>×</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-            <TouchableOpacity style={styles.addDateBtn} onPress={openDatePicker}>
-              <Text style={styles.addDateBtnText}>+ Add Date</Text>
-            </TouchableOpacity>
-          </View>
-          {showDatePicker && Platform.OS === 'ios' && (
-            <Modal transparent animationType="fade">
-              <View style={styles.pickerOverlay}>
-                <View style={styles.pickerBox}>
-                  <DateTimePicker
-                    value={pickerValue}
-                    mode="date"
-                    display="spinner"
-                    onChange={(_, d) => d && setPickerValue(d)}
-                  />
-                  <TouchableOpacity
-                    style={styles.pickerDoneBtn}
-                    onPress={() => onDateChange({ type: 'set', nativeEvent: { timestamp: pickerValue.getTime() } } as DateTimePickerEvent, pickerValue)}
-                  >
-                    <Text style={styles.pickerDoneBtnText}>Done</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.pickerCancelBtn}
-                    onPress={() => setShowDatePicker(false)}
-                  >
-                    <Text style={styles.pickerCancelBtnText}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </Modal>
-          )}
-          {showDatePicker && Platform.OS !== 'ios' && (
-            <DateTimePicker
-              value={pickerValue}
-              mode="date"
-              display="default"
-              onChange={onDateChange}
-            />
-          )}
-
-          {/* 5. Draw Numbers */}
-          <Text style={styles.inputLabel}>Draw Numbers (optional, one per line)</Text>
-          <TextInput
-            style={[styles.input, styles.drawNumbersInput]}
-            value={draft.drawNumbersText}
-            onChangeText={(text) => setDraft((prev) => (prev ? { ...prev, drawNumbersText: text } : prev))}
-            autoCapitalize="none"
-            multiline
-            placeholder="5447\n5448"
-            placeholderTextColor={Colors.textSecondary}
-          />
-          {draft.drawNumberOptions.length > 1 && (
-            <View style={styles.dateOptionsRow}>
-              {draft.drawNumberOptions.map((opt) => (
-                <TouchableOpacity
-                  key={opt}
-                  style={[
-                    styles.dateOptionBtn,
-                    parseDrawNumbersForSubmit(draft.drawNumbersText).includes(opt)
-                      && styles.dateOptionBtnActive,
-                  ]}
-                  onPress={() => setDraft((prev) => {
-                    if (!prev) return prev;
-                    return {
+                  key={gt}
+                  style={[styles.gameBtn, draft.gameType === gt && styles.gameBtnActive]}
+                  onPress={() => {
+                    markFieldTouched('gameType');
+                    markFieldTouched('betType');
+                    clearFieldError('gameType');
+                    clearFieldError('betType');
+                    setDraft((prev) => (prev ? {
                       ...prev,
-                      drawNumbersText: toggleDrawNumberInText(prev.drawNumbersText, opt),
-                    };
-                  })}
+                      gameType: gt,
+                      betType: normalizeBetType(gt, prev.betType),
+                    } : prev));
+                  }}
                 >
-                  <Text
-                    style={[
-                      styles.dateOptionText,
-                      parseDrawNumbersForSubmit(draft.drawNumbersText).includes(opt)
-                        && styles.dateOptionTextActive,
-                    ]}
-                  >
-                    {opt}
+                  <Text style={[styles.gameBtnText, draft.gameType === gt && styles.gameBtnTextActive]}>
+                    {gt}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
-          )}
+            {getFieldSignal('gameType').showAuto && <Text style={styles.fieldMetaAuto}>Auto-detected</Text>}
+            {getFieldSignal('gameType').showNeedsReview && <Text style={styles.fieldMetaWarn}>Needs review</Text>}
+            {getFieldSignal('gameType').error && (
+              <Text style={styles.fieldErrorText}>{getFieldSignal('gameType').error}</Text>
+            )}
 
-          <View style={styles.mappingBox}>
-            <Text style={styles.mappingTitle}>Date → Draw Number Mapping</Text>
-            {mappingPairs.length > 0 ? (
-              mappingPairs.map((pair) => (
-                <View key={`${pair.drawDate}-${pair.drawNumber || 'empty'}`} style={styles.mappingRow}>
-                  <Text style={styles.mappingDate}>{pair.drawDate}</Text>
-                  <Text style={styles.mappingArrow}>{'->'}</Text>
-                  <Text style={styles.mappingNumber}>
-                    {pair.drawNumber || '(no draw number)'}
+            <Text style={styles.inputLabel}>Bet Type</Text>
+            <View
+              style={[
+                styles.optionRow,
+                getFieldSignal('betType').showNeedsReview && styles.fieldNeedsReview,
+                getFieldSignal('betType').error && styles.fieldErrorBorder,
+              ]}
+            >
+              {getBetTypeOptions(draft.gameType).map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  style={[styles.optionBtn, draft.betType === type && styles.optionBtnActive]}
+                  onPress={() => {
+                    markFieldTouched('betType');
+                    clearFieldError('betType');
+                    setDraft((prev) => (prev ? { ...prev, betType: type } : prev));
+                  }}
+                >
+                  <Text style={[styles.optionBtnText, draft.betType === type && styles.optionBtnTextActive]}>
+                    {type}
                   </Text>
-                </View>
-              ))
-            ) : (
-              <Text style={styles.mappingEmpty}>
-                Add at least one draw date to preview mapping.
-              </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {getFieldSignal('betType').showAuto && <Text style={styles.fieldMetaAuto}>Auto-detected</Text>}
+            {getFieldSignal('betType').showNeedsReview && <Text style={styles.fieldMetaWarn}>Needs review</Text>}
+            {getFieldSignal('betType').error && (
+              <Text style={styles.fieldErrorText}>{getFieldSignal('betType').error}</Text>
+            )}
+
+            <Text style={styles.inputLabel}>Purchase Date &amp; Time</Text>
+            <TouchableOpacity
+              style={[
+                styles.input,
+                styles.dateTimeBtn,
+                getFieldSignal('purchaseDatetime').showNeedsReview && styles.fieldNeedsReview,
+                getFieldSignal('purchaseDatetime').error && styles.fieldErrorBorder,
+              ]}
+              onPress={openPurchasePicker}
+            >
+              <Text style={styles.dateTimeBtnText}>{draft.purchaseDatetime}</Text>
+              <Text style={styles.dateTimeBtnAction}>Change</Text>
+            </TouchableOpacity>
+            {getFieldSignal('purchaseDatetime').showAuto && <Text style={styles.fieldMetaAuto}>Auto-detected</Text>}
+            {getFieldSignal('purchaseDatetime').showNeedsReview && (
+              <Text style={styles.fieldMetaWarn}>Needs review</Text>
+            )}
+            {getFieldSignal('purchaseDatetime').error && (
+              <Text style={styles.fieldErrorText}>{getFieldSignal('purchaseDatetime').error}</Text>
             )}
           </View>
 
-          {/* 6. Purchase DateTime */}
-          <Text style={styles.inputLabel}>Purchase Date &amp; Time (DD/MM/YYYY HH:MM AM/PM)</Text>
-          <TextInput
-            style={styles.input}
-            value={draft.purchaseDatetime}
-            onChangeText={(text) => setDraft((prev) => (prev ? { ...prev, purchaseDatetime: text } : prev))}
-            autoCapitalize="characters"
-            placeholder="21/02/2026 01:28 PM"
-            placeholderTextColor={Colors.textSecondary}
-          />
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionTitle}>Your Numbers</Text>
+            <Text style={styles.inputLabel}>
+              Numbers ({draft.gameType === '4D' ? 'one 4-digit number per line' : 'one set per line, space-separated'})
+            </Text>
+            <TextInput
+              style={[
+                styles.input,
+                styles.numbersInput,
+                getFieldSignal('numbersText').showNeedsReview && styles.fieldNeedsReview,
+                getFieldSignal('numbersText').error && styles.fieldErrorBorder,
+              ]}
+              value={draft.numbersText}
+              onChangeText={(text) => {
+                markFieldTouched('numbersText');
+                clearFieldError('numbersText');
+                setDraft((prev) => (prev ? { ...prev, numbersText: text } : prev));
+              }}
+              multiline
+              autoCapitalize="none"
+              placeholder={draft.gameType === '4D' ? '1234\n5678' : '1 7 12 23 34 45\n2 8 14 21 33 47'}
+              placeholderTextColor={Colors.textSecondary}
+            />
+            {numberPreviewRows.length > 0 && (
+              <View style={styles.dateChipsContainer}>
+                {numberPreviewRows.map((row) => (
+                  <View key={row.key} style={[styles.dateChip, !row.isValid && styles.previewChipInvalid]}>
+                    <Text style={styles.dateChipText}>{row.text}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            {parsedInvalidNumberCount > 0 && (
+              <Text style={styles.fieldErrorText}>
+                {draft.gameType === '4D'
+                  ? 'Invalid rows detected: use exactly 4 digits per line.'
+                  : (() => {
+                    const betType = normalizeBetType(draft.gameType, draft.betType);
+                    if (betType === 'STANDARD') {
+                      return 'Invalid rows detected: STANDARD needs exactly 6 numbers per set.';
+                    }
+                    const systemMatch = /^SYSTEM_(\d+)$/.exec(betType);
+                    if (systemMatch) {
+                      return `Invalid rows detected: ${betType} needs exactly ${systemMatch[1]} numbers per set.`;
+                    }
+                    return 'Invalid rows detected: each set needs 6 to 12 numbers.';
+                  })()}
+              </Text>
+            )}
+            {getFieldSignal('numbersText').showAuto && <Text style={styles.fieldMetaAuto}>Auto-detected</Text>}
+            {getFieldSignal('numbersText').showNeedsReview && <Text style={styles.fieldMetaWarn}>Needs review</Text>}
+            {getFieldSignal('numbersText').error && (
+              <Text style={styles.fieldErrorText}>{getFieldSignal('numbersText').error}</Text>
+            )}
+          </View>
 
-          {draft.rawText ? (
-            <View style={styles.rawBox}>
-              <Text style={styles.rawTitle}>OCR Raw Text</Text>
-              <Text style={styles.rawText} numberOfLines={4}>{draft.rawText}</Text>
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionTitle}>Draw Info</Text>
+
+            <Text style={styles.inputLabel}>Draw Dates</Text>
+            <View
+              style={[
+                styles.dateChipsContainer,
+                getFieldSignal('drawDates').showNeedsReview && styles.fieldNeedsReview,
+                getFieldSignal('drawDates').error && styles.fieldErrorBorder,
+              ]}
+            >
+              {draft.drawDateOptions.map((opt) => (
+                <View key={opt} style={styles.dateChip}>
+                  <Text style={styles.dateChipText}>{opt}</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      markFieldTouched('drawDates');
+                      clearFieldError('drawDates');
+                      setDraft((prev) =>
+                        prev
+                          ? { ...prev, drawDateOptions: prev.drawDateOptions.filter((d) => d !== opt) }
+                          : prev,
+                      );
+                    }}
+                    hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+                  >
+                    <Text style={styles.dateChipRemove}>x</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+              <TouchableOpacity style={styles.addDateBtn} onPress={openDatePicker}>
+                <Text style={styles.addDateBtnText}>+ Add Date</Text>
+              </TouchableOpacity>
             </View>
-          ) : null}
+            {getFieldSignal('drawDates').showAuto && <Text style={styles.fieldMetaAuto}>Auto-detected</Text>}
+            {getFieldSignal('drawDates').showNeedsReview && <Text style={styles.fieldMetaWarn}>Needs review</Text>}
+            {getFieldSignal('drawDates').error && (
+              <Text style={styles.fieldErrorText}>{getFieldSignal('drawDates').error}</Text>
+            )}
+
+            <Text style={styles.inputLabel}>Draw Numbers (optional, one per line)</Text>
+            <TextInput
+              style={[
+                styles.input,
+                styles.drawNumbersInput,
+                getFieldSignal('drawNumbersText').showNeedsReview && styles.fieldNeedsReview,
+                getFieldSignal('drawNumbersText').error && styles.fieldErrorBorder,
+              ]}
+              value={draft.drawNumbersText}
+              onChangeText={(text) => {
+                markFieldTouched('drawNumbersText');
+                clearFieldError('drawNumbersText');
+                setDraft((prev) => (prev ? { ...prev, drawNumbersText: text } : prev));
+              }}
+              autoCapitalize="none"
+              multiline
+              placeholder="5447\n5448"
+              placeholderTextColor={Colors.textSecondary}
+            />
+            {parsedDrawNumbers.length > 0 && (
+              <View style={styles.dateChipsContainer}>
+                {parsedDrawNumbers.map((num, idx) => (
+                  <View key={`${num}-${idx}`} style={styles.dateChip}>
+                    <Text style={styles.dateChipText}>{num}</Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        markFieldTouched('drawNumbersText');
+                        clearFieldError('drawNumbersText');
+                        const updated = parsedDrawNumbers
+                          .filter((_, i) => i !== idx)
+                          .join('\n');
+                        setDraft((prev) => prev ? { ...prev, drawNumbersText: updated } : prev);
+                      }}
+                      hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+                    >
+                      <Text style={styles.dateChipRemove}>x</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+            {getFieldSignal('drawNumbersText').showAuto && <Text style={styles.fieldMetaAuto}>Auto-detected</Text>}
+            {getFieldSignal('drawNumbersText').showNeedsReview && <Text style={styles.fieldMetaWarn}>Needs review</Text>}
+            {getFieldSignal('drawNumbersText').error && (
+              <Text style={styles.fieldErrorText}>{getFieldSignal('drawNumbersText').error}</Text>
+            )}
+
+            <View style={styles.mappingBox}>
+              <Text style={styles.mappingTitle}>Date -&gt; Draw Number Mapping</Text>
+              {mappingPairs.length > 0 ? (
+                <>
+                  {mappingPairs.map((pair, idx) => {
+                    const isUnmatched = !pair.drawDate || !pair.drawNumber;
+                    return (
+                      <View
+                        key={`${pair.drawDate || 'nodate'}-${pair.drawNumber || 'nonum'}-${idx}`}
+                        style={[styles.mappingRow, isUnmatched && styles.mappingRowWarning]}
+                      >
+                        <Text style={[styles.mappingDate, !pair.drawDate && styles.mappingMissing]}>
+                          {pair.drawDate || '(no draw date)'}
+                        </Text>
+                        <Text style={styles.mappingArrow}>{'->'}</Text>
+                        <Text style={[styles.mappingNumber, !pair.drawNumber && styles.mappingMissing]}>
+                          {pair.drawNumber || '(no draw number)'}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                  {mappingPairs.some((p) => !p.drawDate) && (
+                    <Text style={styles.mappingHint}>
+                      Tap "+ Add Date" to fill in missing draw dates above.
+                    </Text>
+                  )}
+                  {mappingPairs.some((p) => !p.drawNumber) && (
+                    <Text style={styles.mappingHint}>
+                      Edit the Draw Numbers field to fill in missing draw numbers above.
+                    </Text>
+                  )}
+                </>
+              ) : (
+                <Text style={styles.mappingEmpty}>
+                  Add at least one draw date to preview mapping.
+                </Text>
+              )}
+            </View>
+          </View>
+
+          {draft.gameType === '4D' && (
+            <View style={styles.sectionBlock}>
+              <Text style={styles.sectionTitle}>Money</Text>
+              <View style={styles.amountRow}>
+                <View style={styles.amountCol}>
+                  <Text style={styles.inputLabel}>Big ($)</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      getFieldSignal('bigAmount').showNeedsReview && styles.fieldNeedsReview,
+                      getFieldSignal('bigAmount').error && styles.fieldErrorBorder,
+                    ]}
+                    value={draft.bigAmount}
+                    onChangeText={(text) => {
+                      markFieldTouched('bigAmount');
+                      clearFieldError('bigAmount');
+                      setDraft((prev) => {
+                        if (!prev) return prev;
+                        const total = ((Number.parseFloat(text) || 0) + (Number.parseFloat(prev.smallAmount) || 0)).toFixed(2);
+                        return { ...prev, bigAmount: text, totalPrice: total };
+                      });
+                    }}
+                    keyboardType="decimal-pad"
+                    placeholder="0.00"
+                    placeholderTextColor={Colors.textSecondary}
+                  />
+                  {getFieldSignal('bigAmount').showAuto && <Text style={styles.fieldMetaAuto}>Auto-detected</Text>}
+                  {getFieldSignal('bigAmount').showNeedsReview && <Text style={styles.fieldMetaWarn}>Needs review</Text>}
+                  {getFieldSignal('bigAmount').error && (
+                    <Text style={styles.fieldErrorText}>{getFieldSignal('bigAmount').error}</Text>
+                  )}
+                </View>
+                <View style={styles.amountCol}>
+                  <Text style={styles.inputLabel}>Small ($)</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      getFieldSignal('smallAmount').showNeedsReview && styles.fieldNeedsReview,
+                      getFieldSignal('smallAmount').error && styles.fieldErrorBorder,
+                    ]}
+                    value={draft.smallAmount}
+                    onChangeText={(text) => {
+                      markFieldTouched('smallAmount');
+                      clearFieldError('smallAmount');
+                      setDraft((prev) => {
+                        if (!prev) return prev;
+                        const total = ((Number.parseFloat(prev.bigAmount) || 0) + (Number.parseFloat(text) || 0)).toFixed(2);
+                        return { ...prev, smallAmount: text, totalPrice: total };
+                      });
+                    }}
+                    keyboardType="decimal-pad"
+                    placeholder="1.00"
+                    placeholderTextColor={Colors.textSecondary}
+                  />
+                  {getFieldSignal('smallAmount').showAuto && <Text style={styles.fieldMetaAuto}>Auto-detected</Text>}
+                  {getFieldSignal('smallAmount').showNeedsReview && <Text style={styles.fieldMetaWarn}>Needs review</Text>}
+                  {getFieldSignal('smallAmount').error && (
+                    <Text style={styles.fieldErrorText}>{getFieldSignal('smallAmount').error}</Text>
+                  )}
+                </View>
+                <View style={styles.amountCol}>
+                  <Text style={styles.inputLabel}>Price ($)</Text>
+                  <View style={[styles.input, styles.totalInline]}>
+                    <Text style={styles.totalInlineText}>{draft.totalPrice}</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+          )}
+
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionTitle}>Reference</Text>
+            {draft.rawText ? (
+              <View style={styles.rawBox}>
+                <Text style={styles.rawTitle}>OCR Raw Text</Text>
+                <Text style={styles.rawText} numberOfLines={isRawExpanded ? undefined : 4}>
+                  {draft.rawText}
+                </Text>
+                {(draft.rawText.length > 200 || draft.rawText.split('\n').length > 4) && (
+                  <TouchableOpacity onPress={() => setIsRawExpanded((prev) => !prev)}>
+                    <Text style={styles.rawToggleText}>{isRawExpanded ? 'Show less' : 'Show more'}</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ) : (
+              <Text style={styles.mappingEmpty}>OCR raw text unavailable.</Text>
+            )}
+          </View>
 
           <View style={styles.reviewActions}>
             <TouchableOpacity style={styles.cancelBtn} onPress={reset}>
@@ -719,9 +1147,79 @@ export default function UploadScreen() {
               <Text style={styles.confirmBtnText}>Confirm and Continue</Text>
             </TouchableOpacity>
           </View>
+          <Text style={styles.confirmSummary}>{confirmSummary}</Text>
         </View>
       )}
 
+      {showDatePicker && Platform.OS === 'ios' && (
+        <Modal transparent animationType="fade">
+          <View style={styles.pickerOverlay}>
+            <View style={styles.pickerBox}>
+              <DateTimePicker
+                value={pickerValue}
+                mode="date"
+                display="spinner"
+                onChange={(_, d) => d && setPickerValue(d)}
+              />
+              <TouchableOpacity
+                style={styles.pickerDoneBtn}
+                onPress={() => onDateChange({ type: 'set', nativeEvent: { timestamp: pickerValue.getTime() } } as DateTimePickerEvent, pickerValue)}
+              >
+                <Text style={styles.pickerDoneBtnText}>Done</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.pickerCancelBtn}
+                onPress={() => setShowDatePicker(false)}
+              >
+                <Text style={styles.pickerCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+      {showDatePicker && Platform.OS !== 'ios' && (
+        <DateTimePicker
+          value={pickerValue}
+          mode="date"
+          display="default"
+          onChange={onDateChange}
+        />
+      )}
+
+      {showPurchasePicker && Platform.OS === 'ios' && (
+        <Modal transparent animationType="fade">
+          <View style={styles.pickerOverlay}>
+            <View style={styles.pickerBox}>
+              <DateTimePicker
+                value={purchasePickerValue}
+                mode="datetime"
+                display="spinner"
+                onChange={onPurchaseDateTimeChange}
+              />
+              <TouchableOpacity
+                style={styles.pickerDoneBtn}
+                onPress={confirmPurchasePickerIOS}
+              >
+                <Text style={styles.pickerDoneBtnText}>Done</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.pickerCancelBtn}
+                onPress={() => setShowPurchasePicker(false)}
+              >
+                <Text style={styles.pickerCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+      {showPurchasePicker && Platform.OS !== 'ios' && (
+        <DateTimePicker
+          value={purchasePickerValue}
+          mode={androidPurchaseMode}
+          display="default"
+          onChange={onPurchaseDateTimeChange}
+        />
+      )}
       {uploadState === 'done' && (
         <View style={[styles.statusBox, styles.statusInfo]}>
           <Text style={styles.statusText}>{uploadMsg}</Text>
@@ -858,6 +1356,20 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginBottom: 4,
   },
+  sectionBlock: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    padding: Spacing.sm,
+    gap: Spacing.xs,
+    backgroundColor: Colors.surfaceAlt,
+  },
+  sectionTitle: {
+    fontSize: Typography.sm,
+    color: Colors.text,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
   gameRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
@@ -889,6 +1401,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 2,
   },
+  fieldMetaAuto: {
+    fontSize: Typography.xs,
+    color: Colors.info,
+    fontWeight: '600',
+  },
+  fieldMetaWarn: {
+    fontSize: Typography.xs,
+    color: Colors.warning,
+    fontWeight: '600',
+  },
+  fieldErrorText: {
+    fontSize: Typography.xs,
+    color: Colors.error,
+    fontWeight: '600',
+  },
   input: {
     borderWidth: 1,
     borderColor: Colors.border,
@@ -899,11 +1426,69 @@ const styles = StyleSheet.create({
     color: Colors.text,
     backgroundColor: Colors.surfaceAlt,
   },
+  fieldNeedsReview: {
+    borderColor: Colors.warning,
+    borderWidth: 1.5,
+    borderRadius: Radius.md,
+  },
+  fieldErrorBorder: {
+    borderColor: Colors.error,
+    borderWidth: 1.5,
+    borderRadius: Radius.md,
+  },
+  optionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    padding: Spacing.xs,
+    backgroundColor: Colors.surface,
+  },
+  optionBtn: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: Colors.surfaceAlt,
+  },
+  optionBtnActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary,
+  },
+  optionBtnText: {
+    color: Colors.textSecondary,
+    fontSize: Typography.sm,
+    fontWeight: '700',
+  },
+  optionBtnTextActive: {
+    color: '#fff',
+  },
+  dateTimeBtn: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  dateTimeBtnText: {
+    color: Colors.text,
+    fontSize: Typography.base,
+    fontWeight: '600',
+  },
+  dateTimeBtnAction: {
+    color: Colors.primary,
+    fontSize: Typography.sm,
+    fontWeight: '700',
+  },
   dateChipsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.xs,
     alignItems: 'center',
+  },
+  previewChipInvalid: {
+    backgroundColor: Colors.error,
   },
   dateChip: {
     flexDirection: 'row',
@@ -1040,6 +1625,21 @@ const styles = StyleSheet.create({
     fontSize: Typography.xs,
     color: Colors.textSecondary,
   },
+  mappingRowWarning: {
+    backgroundColor: Colors.warningBg,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 6,
+  },
+  mappingMissing: {
+    color: Colors.warning,
+    fontStyle: 'italic',
+  },
+  mappingHint: {
+    fontSize: Typography.xs,
+    color: Colors.warning,
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
   numbersInput: {
     minHeight: 120,
     textAlignVertical: 'top',
@@ -1079,6 +1679,12 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     lineHeight: 18,
   },
+  rawToggleText: {
+    fontSize: Typography.xs,
+    color: Colors.primary,
+    fontWeight: '700',
+    marginTop: 8,
+  },
   reviewActions: {
     flexDirection: 'row',
     gap: Spacing.sm,
@@ -1110,6 +1716,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: Typography.sm,
   },
+  confirmSummary: {
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    textAlign: 'right',
+  },
   newUploadBtn: {
     backgroundColor: Colors.primary,
     paddingVertical: 10,
@@ -1139,3 +1750,4 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
 });
+
