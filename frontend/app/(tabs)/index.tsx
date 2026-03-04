@@ -289,6 +289,14 @@ function toDraft(response: TicketPreviewResponse): OcrDraft {
   };
 }
 
+function WarnBadge() {
+  return (
+    <View style={styles.badgeWarn}>
+      <Text style={styles.badgeWarnText}>! Review</Text>
+    </View>
+  );
+}
+
 export default function UploadScreen() {
   const { showToast } = useToast();
   const [nickname, setNickname] = useState('');
@@ -682,43 +690,61 @@ export default function UploadScreen() {
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
+      {/* Greeting */}
       <View style={styles.header}>
         <Text style={styles.greeting}>
-          {nickname ? `Welcome back, ${nickname}!` : 'Welcome!'}
+          {nickname ? `Hi, ${nickname} 👋` : 'Welcome 👋'}
         </Text>
         <Text style={styles.subheading}>
-          Upload your ticket, review detected details, then confirm to continue.
+          Scan your lottery ticket to start tracking results.
         </Text>
       </View>
 
-      {selectedUri ? (
+      {/* Upload zone — visible when no image is selected */}
+      {!selectedUri && (
+        <View style={styles.uploadZone}>
+          <Text style={styles.uploadZoneIcon}>🎫</Text>
+          <Text style={styles.uploadZoneTitle}>Scan your ticket</Text>
+          <Text style={styles.uploadZoneSub}>Take a clear photo or pick from your gallery</Text>
+          <View style={styles.uploadZoneBtns}>
+            <TouchableOpacity style={[styles.pickBtn, styles.cameraBtn]} onPress={pickFromCamera}>
+              <Text style={styles.pickBtnEmoji}>📷</Text>
+              <Text style={styles.pickBtnText}>Camera</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.pickBtn, styles.galleryBtn]} onPress={pickFromGallery}>
+              <Text style={styles.pickBtnEmoji}>🖼</Text>
+              <Text style={styles.pickBtnText}>Gallery</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Image preview with action row */}
+      {selectedUri && (
         <View style={styles.previewContainer}>
           <Image source={{ uri: selectedUri }} style={styles.preview} resizeMode="contain" />
-          <TouchableOpacity style={styles.clearBtn} onPress={reset}>
-            <Text style={styles.clearBtnText}>Clear</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={styles.placeholder}>
-          <Text style={styles.placeholderText}>No ticket selected</Text>
+          <View style={styles.previewActions}>
+            <TouchableOpacity style={styles.previewActionBtn} onPress={pickFromCamera}>
+              <Text style={styles.previewActionText}>📷 Retake</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.previewActionBtn} onPress={pickFromGallery}>
+              <Text style={styles.previewActionText}>🖼 Change</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.previewActionBtn, styles.previewClearBtn]} onPress={reset}>
+              <Text style={styles.previewClearText}>Clear</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
-      <View style={styles.pickerRow}>
-        <TouchableOpacity style={[styles.pickBtn, styles.cameraBtn]} onPress={pickFromCamera}>
-          <Text style={styles.pickBtnText}>Camera</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.pickBtn, styles.galleryBtn]} onPress={pickFromGallery}>
-          <Text style={styles.pickBtnText}>Gallery</Text>
-        </TouchableOpacity>
-      </View>
-
+      {/* Upload CTA */}
       {selectedUri && uploadState === 'idle' && (
         <TouchableOpacity style={styles.uploadBtn} onPress={handleUpload}>
-          <Text style={styles.uploadBtnText}>Upload and Read Ticket</Text>
+          <Text style={styles.uploadBtnText}>Read Ticket</Text>
         </TouchableOpacity>
       )}
 
+      {/* Loading state */}
       {(uploadState === 'uploading' || uploadState === 'confirming') && (
         <View style={styles.statusBox}>
           <ActivityIndicator color={Colors.primary} size="small" />
@@ -726,199 +752,214 @@ export default function UploadScreen() {
         </View>
       )}
 
+      {/* Review form */}
       {uploadState === 'review' && draft && (
         <View style={styles.reviewCard}>
-          <Text style={styles.reviewTitle}>Review OCR Output</Text>
-          <Text style={styles.reviewHint}>Edit any field before confirming.</Text>
-
-          <View style={styles.sectionBlock}>
-            <Text style={styles.sectionTitle}>Ticket Identity</Text>
-
-            <Text style={styles.inputLabel}>Game Type</Text>
-            <View style={[styles.gameRow, getFieldSignal('gameType').showNeedsReview && styles.fieldNeedsReview]}>
-              {(['4D', 'TOTO'] as const).map((gt) => (
-                <TouchableOpacity
-                  key={gt}
-                  style={[styles.gameBtn, draft.gameType === gt && styles.gameBtnActive]}
-                  onPress={() => {
-                    markFieldTouched('gameType');
-                    markFieldTouched('betType');
-                    clearFieldError('gameType');
-                    clearFieldError('betType');
-                    setDraft((prev) => (prev ? {
-                      ...prev,
-                      gameType: gt,
-                      betType: normalizeBetType(gt, prev.betType),
-                    } : prev));
-                  }}
-                >
-                  <Text style={[styles.gameBtnText, draft.gameType === gt && styles.gameBtnTextActive]}>
-                    {gt}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            {getFieldSignal('gameType').showAuto && <Text style={styles.fieldMetaAuto}>Auto-detected</Text>}
-            {getFieldSignal('gameType').showNeedsReview && <Text style={styles.fieldMetaWarn}>Needs review</Text>}
-            {getFieldSignal('gameType').error && (
-              <Text style={styles.fieldErrorText}>{getFieldSignal('gameType').error}</Text>
-            )}
-
-            <Text style={styles.inputLabel}>Bet Type</Text>
-            <View
-              style={[
-                styles.optionRow,
-                getFieldSignal('betType').showNeedsReview && styles.fieldNeedsReview,
-                getFieldSignal('betType').error && styles.fieldErrorBorder,
-              ]}
-            >
-              {getBetTypeOptions(draft.gameType).map((type) => (
-                <TouchableOpacity
-                  key={type}
-                  style={[styles.optionBtn, draft.betType === type && styles.optionBtnActive]}
-                  onPress={() => {
-                    markFieldTouched('betType');
-                    clearFieldError('betType');
-                    setDraft((prev) => (prev ? { ...prev, betType: type } : prev));
-                  }}
-                >
-                  <Text style={[styles.optionBtnText, draft.betType === type && styles.optionBtnTextActive]}>
-                    {formatBetTypeLabel(type)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            {getFieldSignal('betType').showAuto && <Text style={styles.fieldMetaAuto}>Auto-detected</Text>}
-            {getFieldSignal('betType').showNeedsReview && <Text style={styles.fieldMetaWarn}>Needs review</Text>}
-            {getFieldSignal('betType').error && (
-              <Text style={styles.fieldErrorText}>{getFieldSignal('betType').error}</Text>
-            )}
-
-            <Text style={styles.inputLabel}>Purchase Date &amp; Time</Text>
-            <TouchableOpacity
-              style={[
-                styles.input,
-                styles.dateTimeBtn,
-                getFieldSignal('purchaseDatetime').showNeedsReview && styles.fieldNeedsReview,
-                getFieldSignal('purchaseDatetime').error && styles.fieldErrorBorder,
-              ]}
-              onPress={openPurchasePicker}
-            >
-              <Text style={styles.dateTimeBtnText}>{draft.purchaseDatetime}</Text>
-              <Text style={styles.dateTimeBtnAction}>Change</Text>
-            </TouchableOpacity>
-            {getFieldSignal('purchaseDatetime').showAuto && <Text style={styles.fieldMetaAuto}>Auto-detected</Text>}
-            {getFieldSignal('purchaseDatetime').showNeedsReview && (
-              <Text style={styles.fieldMetaWarn}>Needs review</Text>
-            )}
-            {getFieldSignal('purchaseDatetime').error && (
-              <Text style={styles.fieldErrorText}>{getFieldSignal('purchaseDatetime').error}</Text>
-            )}
+          <View style={styles.reviewHeader}>
+            <Text style={styles.reviewTitle}>Review Detected Details</Text>
+            <Text style={styles.reviewHint}>Tap any field to correct OCR errors before saving.</Text>
           </View>
 
+          {/* Section: Ticket Identity */}
           <View style={styles.sectionBlock}>
-            <Text style={styles.sectionTitle}>Your Numbers</Text>
-            <Text style={styles.inputLabel}>
-              Numbers ({draft.gameType === '4D' ? 'one 4-digit number per line' : 'one set per line, space-separated'})
-            </Text>
-            <TextInput
-              style={[
-                styles.input,
-                styles.numbersInput,
-                getFieldSignal('numbersText').showNeedsReview && styles.fieldNeedsReview,
-                getFieldSignal('numbersText').error && styles.fieldErrorBorder,
-              ]}
-              value={draft.numbersText}
-              onChangeText={(text) => {
-                markFieldTouched('numbersText');
-                clearFieldError('numbersText');
-                setDraft((prev) => (prev ? { ...prev, numbersText: text } : prev));
-              }}
-              multiline
-              autoCapitalize="none"
-              placeholder={draft.gameType === '4D' ? '1234\n5678' : '1 7 12 23 34 45\n2 8 14 21 33 47'}
-              placeholderTextColor={Colors.textSecondary}
-            />
-            {numberPreviewRows.length > 0 && (
-              <View style={styles.dateChipsContainer}>
-                {numberPreviewRows.map((row) => (
-                  <View key={row.key} style={[styles.dateChip, !row.isValid && styles.previewChipInvalid]}>
-                    <Text style={styles.dateChipText}>{row.text}</Text>
-                  </View>
+            <Text style={styles.sectionTitle}>🎫  Ticket Identity</Text>
+
+            <View style={styles.fieldGroup}>
+              <View style={styles.labelRow}>
+                <Text style={styles.inputLabel}>Game Type</Text>
+              </View>
+              <View style={[styles.gameRow, getFieldSignal('gameType').showNeedsReview && styles.fieldNeedsReview]}>
+                {(['4D', 'TOTO'] as const).map((gt) => (
+                  <TouchableOpacity
+                    key={gt}
+                    style={[styles.gameBtn, draft.gameType === gt && styles.gameBtnActive]}
+                    onPress={() => {
+                      markFieldTouched('gameType');
+                      markFieldTouched('betType');
+                      clearFieldError('gameType');
+                      clearFieldError('betType');
+                      setDraft((prev) => (prev ? {
+                        ...prev,
+                        gameType: gt,
+                        betType: normalizeBetType(gt, prev.betType),
+                      } : prev));
+                    }}
+                  >
+                    <Text style={[styles.gameBtnText, draft.gameType === gt && styles.gameBtnTextActive]}>
+                      {gt}
+                    </Text>
+                  </TouchableOpacity>
                 ))}
               </View>
-            )}
-            {parsedInvalidNumberCount > 0 && (
-              <Text style={styles.fieldErrorText}>
-                {draft.gameType === '4D'
-                  ? 'Invalid rows detected: use exactly 4 digits per line.'
-                  : (() => {
-                    const betType = normalizeBetType(draft.gameType, draft.betType);
-                    if (betType === 'ORDINARY') {
-                      return 'Invalid rows detected: ORDINARY needs exactly 6 numbers per set.';
-                    }
-                    const systemMatch = /^SYSTEM_(\d+)$/.exec(betType);
-                    if (systemMatch) {
-                      return `Invalid rows detected: ${formatBetTypeLabel(betType)} needs exactly ${systemMatch[1]} numbers per set.`;
-                    }
-                    return 'Invalid rows detected: each set needs 6 to 12 numbers.';
-                  })()}
-              </Text>
-            )}
-            {getFieldSignal('numbersText').showAuto && <Text style={styles.fieldMetaAuto}>Auto-detected</Text>}
-            {getFieldSignal('numbersText').showNeedsReview && <Text style={styles.fieldMetaWarn}>Needs review</Text>}
-            {getFieldSignal('numbersText').error && (
-              <Text style={styles.fieldErrorText}>{getFieldSignal('numbersText').error}</Text>
-            )}
-          </View>
-
-          <View style={styles.sectionBlock}>
-            <Text style={styles.sectionTitle}>Draw Info</Text>
-
-            <Text style={styles.inputLabel}>Draw Dates</Text>
-            <View
-              style={[
-                styles.dateChipsContainer,
-                getFieldSignal('drawDates').showNeedsReview && styles.fieldNeedsReview,
-                getFieldSignal('drawDates').error && styles.fieldErrorBorder,
-              ]}
-            >
-              {draft.drawDateOptions.map((opt) => (
-                <View key={opt} style={styles.dateChip}>
-                  <Text style={styles.dateChipText}>{opt}</Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      markFieldTouched('drawDates');
-                      clearFieldError('drawDates');
-                      setDraft((prev) =>
-                        prev
-                          ? { ...prev, drawDateOptions: prev.drawDateOptions.filter((d) => d !== opt) }
-                          : prev,
-                      );
-                    }}
-                    hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-                  >
-                    <Text style={styles.dateChipRemove}>x</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-              <TouchableOpacity style={styles.addDateBtn} onPress={openDatePicker}>
-                <Text style={styles.addDateBtnText}>+ Add Date</Text>
-              </TouchableOpacity>
+              {getFieldSignal('gameType').error && (
+                <Text style={styles.fieldErrorText}>{getFieldSignal('gameType').error}</Text>
+              )}
             </View>
-            {getFieldSignal('drawDates').showAuto && <Text style={styles.fieldMetaAuto}>Auto-detected</Text>}
-            {getFieldSignal('drawDates').showNeedsReview && <Text style={styles.fieldMetaWarn}>Needs review</Text>}
-            {getFieldSignal('drawDates').error && (
-              <Text style={styles.fieldErrorText}>{getFieldSignal('drawDates').error}</Text>
-            )}
+
+            <View style={styles.fieldGroup}>
+              <View style={styles.labelRow}>
+                <Text style={styles.inputLabel}>Bet Type</Text>
+              </View>
+              <View style={[styles.optionRow, getFieldSignal('betType').showNeedsReview && styles.fieldNeedsReview, getFieldSignal('betType').error && styles.fieldErrorBorder]}>
+                {getBetTypeOptions(draft.gameType).map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[styles.optionBtn, draft.betType === type && styles.optionBtnActive]}
+                    onPress={() => {
+                      markFieldTouched('betType');
+                      clearFieldError('betType');
+                      setDraft((prev) => (prev ? { ...prev, betType: type } : prev));
+                    }}
+                  >
+                    <Text style={[styles.optionBtnText, draft.betType === type && styles.optionBtnTextActive]}>
+                      {formatBetTypeLabel(type)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {getFieldSignal('betType').error && (
+                <Text style={styles.fieldErrorText}>{getFieldSignal('betType').error}</Text>
+              )}
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <View style={styles.labelRow}>
+                <Text style={styles.inputLabel}>Purchase Date &amp; Time</Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.input,
+                  styles.dateTimeBtn,
+                  getFieldSignal('purchaseDatetime').showNeedsReview && styles.fieldNeedsReview,
+                  getFieldSignal('purchaseDatetime').error && styles.fieldErrorBorder,
+                ]}
+                onPress={openPurchasePicker}
+              >
+                <Text style={styles.dateTimeBtnText}>{draft.purchaseDatetime}</Text>
+                <Text style={styles.dateTimeBtnAction}>Change</Text>
+              </TouchableOpacity>
+              {getFieldSignal('purchaseDatetime').error && (
+                <Text style={styles.fieldErrorText}>{getFieldSignal('purchaseDatetime').error}</Text>
+              )}
+            </View>
           </View>
 
+          {/* Section: Numbers */}
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionTitle}>🔢  Your Numbers</Text>
+
+            <View style={styles.fieldGroup}>
+              <View style={styles.labelRow}>
+                <Text style={styles.inputLabel}>
+                  {draft.gameType === '4D' ? 'One 4-digit number per line' : 'One set per line, space-separated'}
+                </Text>
+                <WarnBadge />
+              </View>
+              <TextInput
+                style={[
+                  styles.input,
+                  styles.numbersInput,
+                  getFieldSignal('numbersText').showNeedsReview && styles.fieldNeedsReview,
+                  getFieldSignal('numbersText').error && styles.fieldErrorBorder,
+                ]}
+                value={draft.numbersText}
+                onChangeText={(text) => {
+                  markFieldTouched('numbersText');
+                  clearFieldError('numbersText');
+                  setDraft((prev) => (prev ? { ...prev, numbersText: text } : prev));
+                }}
+                multiline
+                autoCapitalize="none"
+                placeholder={draft.gameType === '4D' ? '1234\n5678' : '1 7 12 23 34 45\n2 8 14 21 33 47'}
+                placeholderTextColor={Colors.textSecondary}
+              />
+              {numberPreviewRows.length > 0 && (
+                <View style={styles.dateChipsContainer}>
+                  {numberPreviewRows.map((row) => (
+                    <View key={row.key} style={[styles.dateChip, !row.isValid && styles.previewChipInvalid]}>
+                      <Text style={styles.dateChipText}>{row.text}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+              {parsedInvalidNumberCount > 0 && (
+                <Text style={styles.fieldErrorText}>
+                  {draft.gameType === '4D'
+                    ? 'Invalid rows detected: use exactly 4 digits per line.'
+                    : (() => {
+                      const betType = normalizeBetType(draft.gameType, draft.betType);
+                      if (betType === 'ORDINARY') {
+                        return 'Invalid rows detected: ORDINARY needs exactly 6 numbers per set.';
+                      }
+                      const systemMatch = /^SYSTEM_(\d+)$/.exec(betType);
+                      if (systemMatch) {
+                        return `Invalid rows detected: ${formatBetTypeLabel(betType)} needs exactly ${systemMatch[1]} numbers per set.`;
+                      }
+                      return 'Invalid rows detected: each set needs 6 to 12 numbers.';
+                    })()}
+                </Text>
+              )}
+              {getFieldSignal('numbersText').error && (
+                <Text style={styles.fieldErrorText}>{getFieldSignal('numbersText').error}</Text>
+              )}
+            </View>
+          </View>
+
+          {/* Section: Draw Dates */}
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionTitle}>📅  Draw Dates</Text>
+
+            <View style={styles.fieldGroup}>
+              <View style={styles.labelRow}>
+                <Text style={styles.inputLabel}>Select all applicable draw dates</Text>
+                <WarnBadge />
+              </View>
+              <View
+                style={[
+                  styles.dateChipsContainer,
+                  getFieldSignal('drawDates').showNeedsReview && styles.fieldNeedsReview,
+                  getFieldSignal('drawDates').error && styles.fieldErrorBorder,
+                ]}
+              >
+                {draft.drawDateOptions.map((opt) => (
+                  <View key={opt} style={styles.dateChip}>
+                    <Text style={styles.dateChipText}>{opt}</Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        markFieldTouched('drawDates');
+                        clearFieldError('drawDates');
+                        setDraft((prev) =>
+                          prev
+                            ? { ...prev, drawDateOptions: prev.drawDateOptions.filter((d) => d !== opt) }
+                            : prev,
+                        );
+                      }}
+                      hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+                    >
+                      <Text style={styles.dateChipRemove}>×</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                <TouchableOpacity style={styles.addDateBtn} onPress={openDatePicker}>
+                  <Text style={styles.addDateBtnText}>+ Add Date</Text>
+                </TouchableOpacity>
+              </View>
+              {getFieldSignal('drawDates').error && (
+                <Text style={styles.fieldErrorText}>{getFieldSignal('drawDates').error}</Text>
+              )}
+            </View>
+          </View>
+
+          {/* Section: Bet Amounts (4D only) */}
           {draft.gameType === '4D' && (
             <View style={styles.sectionBlock}>
-              <Text style={styles.sectionTitle}>Money</Text>
+              <Text style={styles.sectionTitle}>💰  Bet Amounts</Text>
               <View style={styles.amountRow}>
                 <View style={styles.amountCol}>
-                  <Text style={styles.inputLabel}>Big ($)</Text>
+                  <View style={styles.labelRow}>
+                    <Text style={styles.inputLabel}>Big ($)</Text>
+                    <WarnBadge />
+                  </View>
                   <TextInput
                     style={[
                       styles.input,
@@ -939,14 +980,15 @@ export default function UploadScreen() {
                     placeholder="0.00"
                     placeholderTextColor={Colors.textSecondary}
                   />
-                  {getFieldSignal('bigAmount').showAuto && <Text style={styles.fieldMetaAuto}>Auto-detected</Text>}
-                  {getFieldSignal('bigAmount').showNeedsReview && <Text style={styles.fieldMetaWarn}>Needs review</Text>}
                   {getFieldSignal('bigAmount').error && (
                     <Text style={styles.fieldErrorText}>{getFieldSignal('bigAmount').error}</Text>
                   )}
                 </View>
                 <View style={styles.amountCol}>
-                  <Text style={styles.inputLabel}>Small ($)</Text>
+                  <View style={styles.labelRow}>
+                    <Text style={styles.inputLabel}>Small ($)</Text>
+                    <WarnBadge />
+                  </View>
                   <TextInput
                     style={[
                       styles.input,
@@ -967,27 +1009,23 @@ export default function UploadScreen() {
                     placeholder="1.00"
                     placeholderTextColor={Colors.textSecondary}
                   />
-                  {getFieldSignal('smallAmount').showAuto && <Text style={styles.fieldMetaAuto}>Auto-detected</Text>}
-                  {getFieldSignal('smallAmount').showNeedsReview && <Text style={styles.fieldMetaWarn}>Needs review</Text>}
                   {getFieldSignal('smallAmount').error && (
                     <Text style={styles.fieldErrorText}>{getFieldSignal('smallAmount').error}</Text>
                   )}
                 </View>
-                <View style={styles.amountCol}>
-                  <Text style={styles.inputLabel}>Price ($)</Text>
-                  <View style={[styles.input, styles.totalInline]}>
-                    <Text style={styles.totalInlineText}>{draft.totalPrice}</Text>
-                  </View>
-                </View>
+              </View>
+              <View style={styles.totalRow}>
+                <Text style={styles.inputLabel}>Total ($)</Text>
+                <Text style={styles.totalRowValue}>${draft.totalPrice}</Text>
               </View>
             </View>
           )}
 
+          {/* Section: Raw OCR */}
           <View style={styles.sectionBlock}>
-            <Text style={styles.sectionTitle}>Reference</Text>
+            <Text style={styles.sectionTitle}>📄  Raw OCR Text</Text>
             {draft.rawText ? (
               <View style={styles.rawBox}>
-                <Text style={styles.rawTitle}>OCR Raw Text</Text>
                 <Text style={styles.rawText} numberOfLines={isRawExpanded ? undefined : 4}>
                   {draft.rawText}
                 </Text>
@@ -1002,18 +1040,20 @@ export default function UploadScreen() {
             )}
           </View>
 
+          {/* Actions */}
           <View style={styles.reviewActions}>
             <TouchableOpacity style={styles.cancelBtn} onPress={reset}>
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm}>
-              <Text style={styles.confirmBtnText}>Confirm and Continue</Text>
+              <Text style={styles.confirmBtnText}>Confirm &amp; Save</Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.confirmSummary}>{confirmSummary}</Text>
+          {confirmSummary ? <Text style={styles.confirmSummary}>{confirmSummary}</Text> : null}
         </View>
       )}
 
+      {/* Date pickers */}
       {showDatePicker && Platform.OS === 'ios' && (
         <Modal transparent animationType="fade">
           <View style={styles.pickerOverlay}>
@@ -1030,10 +1070,7 @@ export default function UploadScreen() {
               >
                 <Text style={styles.pickerDoneBtnText}>Done</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.pickerCancelBtn}
-                onPress={() => setShowDatePicker(false)}
-              >
+              <TouchableOpacity style={styles.pickerCancelBtn} onPress={() => setShowDatePicker(false)}>
                 <Text style={styles.pickerCancelBtnText}>Cancel</Text>
               </TouchableOpacity>
             </View>
@@ -1041,12 +1078,7 @@ export default function UploadScreen() {
         </Modal>
       )}
       {showDatePicker && Platform.OS !== 'ios' && (
-        <DateTimePicker
-          value={pickerValue}
-          mode="date"
-          display="default"
-          onChange={onDateChange}
-        />
+        <DateTimePicker value={pickerValue} mode="date" display="default" onChange={onDateChange} />
       )}
 
       {showPurchasePicker && Platform.OS === 'ios' && (
@@ -1059,16 +1091,10 @@ export default function UploadScreen() {
                 display="spinner"
                 onChange={onPurchaseDateTimeChange}
               />
-              <TouchableOpacity
-                style={styles.pickerDoneBtn}
-                onPress={confirmPurchasePickerIOS}
-              >
+              <TouchableOpacity style={styles.pickerDoneBtn} onPress={confirmPurchasePickerIOS}>
                 <Text style={styles.pickerDoneBtnText}>Done</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.pickerCancelBtn}
-                onPress={() => setShowPurchasePicker(false)}
-              >
+              <TouchableOpacity style={styles.pickerCancelBtn} onPress={() => setShowPurchasePicker(false)}>
                 <Text style={styles.pickerCancelBtnText}>Cancel</Text>
               </TouchableOpacity>
             </View>
@@ -1083,8 +1109,12 @@ export default function UploadScreen() {
           onChange={onPurchaseDateTimeChange}
         />
       )}
+
+      {/* Done state */}
       {uploadState === 'done' && (
-        <View style={[styles.statusBox, styles.statusInfo]}>
+        <View style={[styles.statusBox, styles.statusSuccess]}>
+          <Text style={styles.statusIcon}>✅</Text>
+          <Text style={styles.statusSuccessTitle}>Ticket Saved!</Text>
           <Text style={styles.statusText}>{uploadMsg}</Text>
           <TouchableOpacity style={styles.newUploadBtn} onPress={reset}>
             <Text style={styles.newUploadBtnText}>Upload Another Ticket</Text>
@@ -1092,8 +1122,10 @@ export default function UploadScreen() {
         </View>
       )}
 
+      {/* Error state */}
       {uploadState === 'error' && (
         <View style={[styles.statusBox, styles.statusError]}>
+          <Text style={styles.statusIcon}>⚠️</Text>
           <Text style={styles.statusText}>{uploadMsg}</Text>
           <TouchableOpacity style={styles.newUploadBtn} onPress={reset}>
             <Text style={styles.newUploadBtnText}>Try Again</Text>
@@ -1101,15 +1133,24 @@ export default function UploadScreen() {
         </View>
       )}
 
+      {/* How it works (idle, no image) */}
       {uploadState === 'idle' && !selectedUri && (
-        <View style={styles.instructions}>
-          <Text style={styles.instructionsTitle}>How it works</Text>
+        <View style={styles.howItWorks}>
+          <Text style={styles.howItWorksTitle}>How it works</Text>
           {[
-            '1. Capture or choose a clear ticket image',
-            '2. OCR extracts game type, draw date, and numbers',
-            '3. Review, edit, and confirm before checks start',
-          ].map((step) => (
-            <Text key={step} style={styles.instructionStep}>{step}</Text>
+            { n: '1', label: 'Scan your ticket', desc: 'Take a photo or pick from gallery' },
+            { n: '2', label: 'AI reads the details', desc: 'Game type, draw date, and numbers are detected' },
+            { n: '3', label: 'Review & confirm', desc: 'Fix any errors, then save to track results' },
+          ].map(({ n, label, desc }) => (
+            <View key={n} style={styles.howStep}>
+              <View style={styles.howStepNum}>
+                <Text style={styles.howStepNumText}>{n}</Text>
+              </View>
+              <View style={styles.howStepBody}>
+                <Text style={styles.howStepLabel}>{label}</Text>
+                <Text style={styles.howStepDesc}>{desc}</Text>
+              </View>
+            </View>
           ))}
         </View>
       )}
@@ -1538,5 +1579,188 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     lineHeight: 22,
     marginBottom: 4,
+  },
+
+  // Upload zone (idle, no image)
+  uploadZone: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    borderWidth: 2,
+    borderColor: Colors.border,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    paddingVertical: Spacing.xl,
+    paddingHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+    gap: Spacing.xs,
+  },
+  uploadZoneIcon: { fontSize: 48, marginBottom: 4 },
+  uploadZoneTitle: {
+    fontSize: Typography.xl,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  uploadZoneSub: {
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: Spacing.sm,
+  },
+  uploadZoneBtns: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    width: '100%',
+  },
+  pickBtnEmoji: { fontSize: 18 },
+
+  // Preview action row
+  previewActions: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  previewActionBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRightWidth: 1,
+    borderRightColor: Colors.border,
+  },
+  previewActionText: {
+    fontSize: Typography.sm,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  previewClearBtn: {
+    borderRightWidth: 0,
+  },
+  previewClearText: {
+    fontSize: Typography.sm,
+    fontWeight: '600',
+    color: Colors.error,
+  },
+
+  // Review form
+  reviewHeader: { gap: 2 },
+  legendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    backgroundColor: Colors.surfaceAlt,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignSelf: 'flex-start',
+  },
+  legendBadge: { marginRight: 2 },
+  legendLabel: {
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+
+  // Confidence badges
+  badgeAuto: {
+    backgroundColor: Colors.infoBg,
+    borderRadius: Radius.full,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  badgeAutoText: {
+    fontSize: Typography.xs,
+    color: Colors.info,
+    fontWeight: '700',
+  },
+  badgeWarn: {
+    backgroundColor: Colors.warningBg,
+    borderRadius: Radius.full,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  badgeWarnText: {
+    fontSize: Typography.xs,
+    color: Colors.warning,
+    fontWeight: '700',
+  },
+
+  // Field wrappers
+  fieldGroup: { gap: 4 },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+
+  // Status states
+  statusSuccess: { backgroundColor: Colors.successBg },
+  statusIcon: { fontSize: 36 },
+  statusSuccessTitle: {
+    fontSize: Typography.lg,
+    fontWeight: '800',
+    color: Colors.success,
+  },
+
+  // How it works
+  howItWorks: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.md,
+    marginTop: Spacing.md,
+    gap: Spacing.md,
+  },
+  howItWorksTitle: {
+    fontSize: Typography.base,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  howStep: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
+  howStepNum: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  howStepNumText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: Typography.sm,
+  },
+  howStepBody: { flex: 1, gap: 2 },
+  howStepLabel: {
+    fontSize: Typography.sm,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  howStepDesc: {
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+  },
+
+  totalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: Spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    marginTop: 2,
+  },
+  totalRowValue: {
+    fontSize: Typography.base,
+    fontWeight: '800',
+    color: Colors.text,
   },
 });

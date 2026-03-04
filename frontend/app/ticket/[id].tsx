@@ -218,10 +218,20 @@ export default function TicketDetailScreen() {
       )}
 
       {ticket.toto_expanded_combinations.length > 0 && (
-        <Section title={`Expanded Combinations (${ticket.toto_expanded_combinations.length})`}>
-          {visibleCombos.map((c) => (
-            <Text key={c} style={styles.comboText}>{c}</Text>
-          ))}
+        <Section title="Expanded Combinations">
+          <View style={styles.comboHeaderRow}>
+            <Text style={styles.comboHeaderCount}>
+              {ticket.toto_expanded_combinations.length} combinations
+            </Text>
+            <Text style={styles.comboHeaderSub}>
+              {ticket.toto_ticket?.system_type ?? 'SYSTEM'}
+            </Text>
+          </View>
+          <View style={styles.comboTable}>
+            {visibleCombos.map((c, i) => (
+              <ComboRow key={c} index={i} combo={c} />
+            ))}
+          </View>
           {ticket.toto_expanded_combinations.length > comboPreviewLimit && (
             <TouchableOpacity
               style={styles.inlineAction}
@@ -229,7 +239,7 @@ export default function TicketDetailScreen() {
             >
               <Text style={styles.inlineActionText}>
                 {showAllCombos
-                  ? 'Show less combinations'
+                  ? 'Show less'
                   : `Show all ${ticket.toto_expanded_combinations.length} combinations`}
               </Text>
             </TouchableOpacity>
@@ -320,6 +330,22 @@ export default function TicketDetailScreen() {
         </Modal>
       )}
     </ScrollView>
+  );
+}
+
+function ComboRow({ index, combo }: { index: number; combo: string }) {
+  const nums = combo.split(',');
+  return (
+    <View style={[styles.comboRow, index % 2 === 1 && styles.comboRowAlt]}>
+      <Text style={styles.comboIndex}>{index + 1}</Text>
+      <View style={styles.comboChips}>
+        {nums.map((n, i) => (
+          <View key={i} style={styles.comboChip}>
+            <Text style={styles.comboChipText}>{n.padStart(2, '0')}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -520,11 +546,68 @@ const styles = StyleSheet.create({
     minWidth: 40,
     textAlign: 'center',
   },
-  comboText: {
-    fontSize: Typography.sm,
+  comboHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
+  },
+  comboHeaderCount: {
+    fontSize: Typography.base,
+    fontWeight: '700',
     color: Colors.text,
-    fontFamily: 'monospace',
+  },
+  comboHeaderSub: {
+    fontSize: Typography.xs,
+    fontWeight: '700',
+    color: Colors.info,
+    backgroundColor: Colors.infoBg,
+    paddingHorizontal: 8,
     paddingVertical: 3,
+    borderRadius: Radius.full,
+  },
+  comboTable: {
+    borderRadius: Radius.sm,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: Spacing.sm,
+  },
+  comboRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    gap: 8,
+    backgroundColor: Colors.surface,
+  },
+  comboRowAlt: {
+    backgroundColor: Colors.surfaceAlt,
+  },
+  comboIndex: {
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+    width: 24,
+    textAlign: 'right',
+  },
+  comboChips: {
+    flexDirection: 'row',
+    gap: 5,
+    flex: 1,
+  },
+  comboChip: {
+    width: 30,
+    height: 30,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.infoBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  comboChipText: {
+    fontSize: Typography.xs,
+    color: Colors.info,
+    fontWeight: '800',
   },
   inlineAction: {
     alignSelf: 'flex-start',

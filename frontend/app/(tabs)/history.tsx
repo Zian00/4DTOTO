@@ -2,9 +2,7 @@ import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Image,
-  Modal,
-  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -15,15 +13,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Colors, Radius, Spacing, Typography } from '../../constants/theme';
 import { useToast } from '../../hooks/useToast';
-import { getApiBaseUrl, listTickets, type TicketListItem } from '../../services/api';
+import { listTickets, type TicketListItem } from '../../services/api';
 
 const NOTIFIED_KEY = '@fourdtoto/notified_tickets';
 
 const FILTER_OPTIONS = [
   { key: 'all', label: 'All' },
-  { key: '4D', label: '4D only' },
-  { key: 'TOTO', label: 'TOTO only' },
-  { key: 'system', label: 'System bets' },
+  { key: '4D', label: '4D' },
+  { key: 'TOTO', label: 'TOTO' },
+  { key: 'system', label: 'System' },
   { key: 'winning', label: 'Winners' },
 ] as const;
 
@@ -35,76 +33,90 @@ function toEpoch(value: string): number {
 }
 
 function sortTickets(items: TicketListItem[], sort: Sort): TicketListItem[] {
-  const sorted = [...items];
-  if (sort === 'oldest') {
-    sorted.sort((a, b) => toEpoch(a.purchase_datetime) - toEpoch(b.purchase_datetime));
-    return sorted;
-  }
-  sorted.sort((a, b) => toEpoch(b.purchase_datetime) - toEpoch(a.purchase_datetime));
-  return sorted;
+  return [...items].sort((a, b) =>
+    sort === 'oldest'
+      ? toEpoch(a.purchase_datetime) - toEpoch(b.purchase_datetime)
+      : toEpoch(b.purchase_datetime) - toEpoch(a.purchase_datetime),
+  );
 }
 
-function StatusChip({ item }: { item: TicketListItem }) {
-  let label: string = 'Pending';
-  let bg: string = Colors.border;
-  let fg: string = Colors.textSecondary;
-
-  if (item.status === 'WON') {
-    label = item.prize_tier ? `Won (${item.prize_tier})` : 'Won';
-    bg = Colors.winBg;
-    fg = Colors.win;
-  } else if (item.status === 'LOST') {
-    label = 'No Prize';
-    bg = Colors.surfaceAlt;
-    fg = Colors.textSecondary;
+function StatusChip({ status }: { status: TicketListItem['status'] }) {
+  if (status === 'WON') {
+    return (
+      <View style={[styles.chip, styles.chipWon]}>
+        <Text style={[styles.chipText, styles.chipTextWon]}>Won</Text>
+      </View>
+    );
   }
-
+  if (status === 'LOST') {
+    return (
+      <View style={[styles.chip, styles.chipLost]}>
+        <Text style={[styles.chipText, styles.chipTextLost]}>No Prize</Text>
+      </View>
+    );
+  }
   return (
-    <View style={[styles.chip, { backgroundColor: bg }]}>
-      <Text style={[styles.chipText, { color: fg }]}>{label}</Text>
+    <View style={[styles.chip, styles.chipPending]}>
+      <Text style={[styles.chipText, styles.chipTextPending]}>Pending</Text>
     </View>
   );
 }
 
-function TicketCard({
-  item,
-  onPress,
-}: {
-  item: TicketListItem;
-  onPress: () => void;
-}) {
+function TicketCard({ item, onPress }: { item: TicketListItem; onPress: () => void }) {
+  const isWon = item.status === 'WON';
+  const accentColor = item.game_type === '4D' ? Colors.primary : Colors.accent;
   const drawDate = new Date(item.draw_date).toLocaleDateString('en-SG', {
+    weekday: 'short',
     day: '2-digit',
     month: 'short',
     year: 'numeric',
   });
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
-      <View style={styles.cardRow}>
-        {item.image_url ? (
-          <Image source={{ uri: getApiBaseUrl() + item.image_url }} style={styles.thumbnail} resizeMode="cover" />
-        ) : (
-          <View style={[styles.badge, { backgroundColor: item.game_type === '4D' ? Colors.primary : Colors.accent }]}>
-            <Text style={styles.badgeText}>{item.game_type}</Text>
+    <TouchableOpacity
+      style={[styles.card, isWon && styles.cardWon]}
+      onPress={onPress}
+      activeOpacity={0.75}
+    >
+      <View style={[styles.cardAccent, { backgroundColor: accentColor }]} />
+
+      <View style={styles.cardBody}>
+        {/* Top row: game tag + draw number + status chip */}
+        <View style={styles.cardTopRow}>
+          <View style={styles.cardTopLeft}>
+            <View style={[styles.gameTag, { backgroundColor: accentColor }]}>
+              <Text style={styles.gameTagText}>{item.game_type}</Text>
+            </View>
+            {item.draw_number ? (
+              <Text style={styles.drawNo}>#{item.draw_number}</Text>
+            ) : null}
           </View>
-        )}
-        <View style={styles.cardInfo}>
-          <View style={styles.cardTitleRow}>
-            {item.image_url && (
-              <View style={[styles.badgeSmall, { backgroundColor: item.game_type === '4D' ? Colors.primary : Colors.accent }]}>
-                <Text style={styles.badgeSmallText}>{item.game_type}</Text>
-              </View>
-            )}
-            <Text style={styles.cardDate}>Draw: {drawDate}</Text>
-          </View>
-          <Text style={styles.cardMeta}>Total: ${item.total_price}</Text>
-          {item.bet_label && (
-            <Text style={styles.cardBetType}>{item.bet_label}</Text>
-          )}
+          <StatusChip status={item.status} />
         </View>
-        <StatusChip item={item} />
+
+        {/* Draw date */}
+        <Text style={styles.drawDate}>{drawDate}</Text>
+
+        {/* Price + bet type */}
+        <View style={styles.cardMeta}>
+          <Text style={styles.metaText}>${item.total_price}</Text>
+          {item.bet_label ? (
+            <>
+              <View style={styles.metaDot} />
+              <Text style={styles.metaText}>{item.bet_label}</Text>
+            </>
+          ) : null}
+        </View>
+
+        {/* Prize banner for winners */}
+        {isWon && item.prize_tier ? (
+          <View style={styles.prizeBanner}>
+            <Text style={styles.prizeBannerText}>🏆 {item.prize_tier}</Text>
+          </View>
+        ) : null}
       </View>
+
+      <Text style={styles.chevron}>›</Text>
     </TouchableOpacity>
   );
 }
@@ -116,7 +128,6 @@ export default function HistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState<Sort>('newest');
   const [filter, setFilter] = useState<Filter>('all');
-  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
 
   async function loadTickets(s: Sort = sort, f: Filter = filter) {
     setLoading(true);
@@ -138,14 +149,8 @@ export default function HistoryScreen() {
   async function checkForNewResults(items: TicketListItem[]) {
     const stored = await AsyncStorage.getItem(NOTIFIED_KEY);
     const notifiedIds: string[] = stored ? JSON.parse(stored) : [];
-
-    const newWins = items.filter(
-      (t) => t.status === 'WON' && !notifiedIds.includes(t.id),
-    );
-    const newLosses = items.filter(
-      (t) => t.status === 'LOST' && !notifiedIds.includes(t.id),
-    );
-
+    const newWins = items.filter((t) => t.status === 'WON' && !notifiedIds.includes(t.id));
+    const newLosses = items.filter((t) => t.status === 'LOST' && !notifiedIds.includes(t.id));
     for (const t of newWins) {
       showToast(
         `You won${t.prize_tier ? ` (${t.prize_tier})` : ''} on your ${t.game_type} ticket`,
@@ -157,7 +162,6 @@ export default function HistoryScreen() {
       showToast(`${newLosses.length} ticket(s) resolved with no prize.`, 'loss');
       newLosses.forEach((t) => notifiedIds.push(t.id));
     }
-
     if (newWins.length > 0 || newLosses.length > 0) {
       await AsyncStorage.setItem(NOTIFIED_KEY, JSON.stringify(notifiedIds));
     }
@@ -169,37 +173,61 @@ export default function HistoryScreen() {
     }, [sort, filter]),
   );
 
-  function toggleSort() {
-    setSort((prev) => (prev === 'newest' ? 'oldest' : 'newest'));
-  }
-
-  function handleFilterChange(f: Filter) {
-    if (filter === f) return;
-    setFilter(f);
-    setIsFilterModalOpen(false);
-  }
-
-  function currentFilterLabel(): string {
-    const found = FILTER_OPTIONS.find((opt) => opt.key === filter);
-    return found?.label ?? 'All';
-  }
+  const pendingCount = tickets.filter((t) => t.status === 'PENDING').length;
+  const wonCount = tickets.filter((t) => t.status === 'WON').length;
 
   return (
     <View style={styles.container}>
+      {/* Summary stats */}
+      {!loading && tickets.length > 0 && (
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryValue}>{tickets.length}</Text>
+            <Text style={styles.summaryLabel}>Total</Text>
+          </View>
+          <View style={styles.summarySep} />
+          <View style={styles.summaryItem}>
+            <Text style={[styles.summaryValue, pendingCount > 0 && styles.summaryPending]}>
+              {pendingCount}
+            </Text>
+            <Text style={styles.summaryLabel}>Pending</Text>
+          </View>
+          <View style={styles.summarySep} />
+          <View style={styles.summaryItem}>
+            <Text style={[styles.summaryValue, wonCount > 0 && styles.summaryWon]}>
+              {wonCount}
+            </Text>
+            <Text style={styles.summaryLabel}>Won</Text>
+          </View>
+        </View>
+      )}
+
+      {/* Filter pills + sort toggle */}
       <View style={styles.controlBar}>
-        <TouchableOpacity
-          style={styles.selectorButton}
-          onPress={toggleSort}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterPills}
         >
-          <Text style={styles.selectorButtonText}>
-            {sort === 'newest' ? 'Sort: Newest first' : 'Sort: Oldest first'}
-          </Text>
-        </TouchableOpacity>
+          {FILTER_OPTIONS.map(({ key, label }) => (
+            <TouchableOpacity
+              key={key}
+              style={[styles.filterPill, filter === key && styles.filterPillActive]}
+              onPress={() => {
+                if (filter !== key) setFilter(key);
+              }}
+            >
+              <Text style={[styles.filterPillText, filter === key && styles.filterPillTextActive]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
         <TouchableOpacity
-          style={styles.selectorButton}
-          onPress={() => setIsFilterModalOpen(true)}
+          style={styles.sortBtn}
+          onPress={() => setSort((p) => (p === 'newest' ? 'oldest' : 'newest'))}
         >
-          <Text style={styles.selectorButtonText}>{`Filter: ${currentFilterLabel()}`}</Text>
+          <Text style={styles.sortBtnText}>{sort === 'newest' ? '↓ New' : '↑ Old'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -207,8 +235,15 @@ export default function HistoryScreen() {
         <ActivityIndicator style={styles.loader} size="large" color={Colors.primary} />
       ) : tickets.length === 0 ? (
         <View style={styles.empty}>
-          <Text style={styles.emptyIcon}>No tickets</Text>
-          <Text style={styles.emptyText}>Upload one from the Home tab.</Text>
+          <Text style={styles.emptyIcon}>🎫</Text>
+          <Text style={styles.emptyTitle}>
+            {filter === 'all' ? 'No tickets yet' : 'No tickets match this filter'}
+          </Text>
+          <Text style={styles.emptyText}>
+            {filter === 'all'
+              ? 'Upload a ticket from the Upload tab to get started.'
+              : 'Try selecting a different filter above.'}
+          </Text>
         </View>
       ) : (
         <FlatList
@@ -223,158 +258,203 @@ export default function HistoryScreen() {
           refreshing={loading}
         />
       )}
-
-      <Modal
-        visible={isFilterModalOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setIsFilterModalOpen(false)}
-      >
-        <Pressable style={styles.filterOverlay} onPress={() => setIsFilterModalOpen(false)}>
-          <Pressable style={styles.filterDropdown} onPress={() => {}}>
-            <Text style={styles.filterTitle}>Select Filter</Text>
-            {FILTER_OPTIONS.map(({ key, label }) => (
-              <TouchableOpacity
-                key={key}
-                style={[styles.filterOption, filter === key && styles.filterOptionActive]}
-                onPress={() => handleFilterChange(key)}
-              >
-                <Text style={[styles.filterOptionText, filter === key && styles.filterOptionTextActive]}>
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </Pressable>
-        </Pressable>
-      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  controlBar: {
+
+  summaryRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
     backgroundColor: Colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
-    gap: Spacing.sm,
-  },
-  selectorButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.surfaceAlt,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  selectorButtonText: {
-    fontSize: Typography.xs,
-    color: Colors.text,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  filterOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    justifyContent: 'center',
-    padding: Spacing.lg,
-  },
-  filterDropdown: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: Spacing.md,
-    gap: Spacing.xs,
-  },
-  filterTitle: {
-    fontSize: Typography.sm,
-    fontWeight: '700',
-    color: Colors.text,
-    marginBottom: Spacing.xs,
-  },
-  filterOption: {
     paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.surfaceAlt,
+    paddingHorizontal: Spacing.md,
   },
-  filterOptionActive: {
-    backgroundColor: Colors.primary,
-  },
-  filterOptionText: {
-    fontSize: Typography.sm,
+  summaryItem: { flex: 1, alignItems: 'center' },
+  summaryValue: {
+    fontSize: Typography.lg,
+    fontWeight: '800',
     color: Colors.text,
-    fontWeight: '600',
   },
-  filterOptionTextActive: {
-    color: '#fff',
+  summaryPending: { color: Colors.warning },
+  summaryWon: { color: Colors.win },
+  summaryLabel: {
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    marginTop: 1,
   },
-  list: { padding: Spacing.md, gap: Spacing.sm },
-  card: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
+  summarySep: {
+    width: 1,
+    backgroundColor: Colors.border,
+    marginVertical: 4,
   },
-  cardRow: {
+
+  controlBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    paddingRight: Spacing.sm,
   },
-  thumbnail: {
-    width: 56,
-    height: 56,
-    borderRadius: Radius.sm,
+  filterPills: {
+    flexDirection: 'row',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+  },
+  filterPill: {
+    borderRadius: Radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     backgroundColor: Colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  badge: {
+  filterPillActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  filterPillText: {
+    fontSize: Typography.xs,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  filterPillTextActive: {
+    color: '#fff',
+  },
+  sortBtn: {
+    borderRadius: Radius.full,
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: Radius.sm,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceAlt,
+    marginLeft: Spacing.xs,
+    flexShrink: 0,
   },
-  badgeText: { color: '#fff', fontWeight: '800', fontSize: Typography.sm },
-  badgeSmall: {
-    paddingHorizontal: 6,
+  sortBtnText: {
+    fontSize: Typography.xs,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+
+  list: { padding: Spacing.md, gap: Spacing.sm, paddingBottom: Spacing.xl },
+
+  card: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+  },
+  cardWon: {
+    borderColor: Colors.win,
+    backgroundColor: '#f0fdf4',
+  },
+  cardAccent: {
+    width: 4,
+  },
+  cardBody: {
+    flex: 1,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 12,
+    gap: 4,
+  },
+  cardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  cardTopLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  gameTag: {
+    paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: Radius.sm,
   },
-  badgeSmallText: { color: '#fff', fontWeight: '800', fontSize: Typography.xs },
-  cardInfo: { flex: 1 },
-  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginBottom: 2 },
-  cardDate: { fontSize: Typography.base, fontWeight: '600', color: Colors.text },
-  cardMeta: { fontSize: Typography.xs, color: Colors.textSecondary, marginTop: 2 },
-  cardBetType: { fontSize: Typography.xs, color: Colors.textSecondary, marginTop: 2 },
+  gameTagText: { color: '#fff', fontWeight: '800', fontSize: Typography.xs },
+  drawNo: {
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+  },
+  drawDate: {
+    fontSize: Typography.base,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  cardMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginTop: 1,
+  },
+  metaText: { fontSize: Typography.xs, color: Colors.textSecondary },
+  metaDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 999,
+    backgroundColor: Colors.textSecondary,
+    opacity: 0.4,
+  },
+  prizeBanner: {
+    marginTop: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.winBg,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  prizeBannerText: {
+    fontSize: Typography.xs,
+    fontWeight: '700',
+    color: Colors.win,
+  },
+  chevron: {
+    fontSize: 22,
+    color: Colors.textSecondary,
+    alignSelf: 'center',
+    paddingRight: 12,
+    opacity: 0.4,
+  },
+
   chip: {
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: Radius.full,
   },
+  chipWon: { backgroundColor: Colors.winBg },
+  chipLost: { backgroundColor: Colors.surfaceAlt },
+  chipPending: { backgroundColor: Colors.warningBg },
   chipText: { fontSize: Typography.xs, fontWeight: '700' },
-  winBanner: {
-    marginTop: Spacing.sm,
-    backgroundColor: Colors.winBg,
-    borderRadius: Radius.sm,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    alignSelf: 'flex-start',
-  },
-  winBannerText: { fontSize: Typography.sm, fontWeight: '700', color: Colors.win },
+  chipTextWon: { color: Colors.win },
+  chipTextLost: { color: Colors.textSecondary },
+  chipTextPending: { color: Colors.warning },
+
   loader: { flex: 1 },
   empty: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: Spacing.xl,
+    gap: Spacing.sm,
   },
-  emptyIcon: { fontSize: 28, marginBottom: Spacing.md, color: Colors.textSecondary },
+  emptyIcon: { fontSize: 52, marginBottom: Spacing.xs },
+  emptyTitle: {
+    fontSize: Typography.lg,
+    fontWeight: '700',
+    color: Colors.text,
+  },
   emptyText: {
     fontSize: Typography.base,
     color: Colors.textSecondary,
