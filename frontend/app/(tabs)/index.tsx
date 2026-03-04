@@ -57,7 +57,7 @@ type FieldTouched = Partial<Record<ReviewField, boolean>>;
 
 const BET_TYPES_4D = ['ORDINARY', 'IBET'] as const;
 const BET_TYPES_TOTO = [
-  'STANDARD',
+  'ORDINARY',
   'SYSTEM_7',
   'SYSTEM_8',
   'SYSTEM_9',
@@ -230,14 +230,21 @@ function getBetTypeOptions(gameType: GameType): readonly string[] {
 
 function normalizeBetType(gameType: GameType, betTypeRaw: string): string {
   const token = betTypeRaw.trim().toUpperCase().replace(/[\s-]+/g, '_');
-  if (!token) return gameType === '4D' ? 'ORDINARY' : 'STANDARD';
+  if (!token) return 'ORDINARY';
   if (gameType === '4D') {
     return token === 'IBET' || token === 'I_BET' ? 'IBET' : 'ORDINARY';
   }
-  if (token === 'STANDARD') return 'STANDARD';
+  if (token === 'STANDARD' || token === 'ORDINARY') return 'ORDINARY';
   const match = /^SYSTEM_?([7-9]|1[0-2])$/.exec(token);
   if (match) return `SYSTEM_${match[1]}`;
-  return 'STANDARD';
+  return 'ORDINARY';
+}
+
+function formatBetTypeLabel(betType: string): string {
+  const token = betType.trim().toUpperCase();
+  const match = /^SYSTEM_(\d+)$/.exec(token);
+  if (match) return `SYSTEM ${match[1]}`;
+  return token;
 }
 
 function hasContent(value: string | null | undefined): boolean {
@@ -309,7 +316,7 @@ export default function UploadScreen() {
           const inRange = row.length >= 6 && row.length <= 12;
           if (!inRange) {
             isValid = false;
-          } else if (normalizedBetType === 'STANDARD') {
+          } else if (normalizedBetType === 'ORDINARY') {
             isValid = row.length === 6;
           } else {
             const systemMatch = /^SYSTEM_(\d+)$/.exec(normalizedBetType);
@@ -502,21 +509,21 @@ export default function UploadScreen() {
       if (badRow) {
         nextErrors.numbersText = 'Each TOTO set must contain 6 to 12 numbers.';
       } else {
-        if (normalizedBetType === 'STANDARD') {
+        if (normalizedBetType === 'ORDINARY') {
           const mismatchRow = parsedRows.find((row) => row.length !== 6);
           if (mismatchRow) {
-            nextErrors.betType = 'STANDARD requires exactly 6 numbers per set.';
+            nextErrors.betType = 'ORDINARY requires exactly 6 numbers per set.';
           }
         } else {
-          const systemMatch = /^SYSTEM_(\d+)$/.exec(normalizedBetType);
-          if (systemMatch) {
-            const expected = Number.parseInt(systemMatch[1], 10);
-            const mismatchRow = parsedRows.find((row) => row.length !== expected);
-            if (mismatchRow) {
-              nextErrors.betType = `${normalizedBetType} requires exactly ${expected} numbers per set.`;
+            const systemMatch = /^SYSTEM_(\d+)$/.exec(normalizedBetType);
+            if (systemMatch) {
+              const expected = Number.parseInt(systemMatch[1], 10);
+              const mismatchRow = parsedRows.find((row) => row.length !== expected);
+              if (mismatchRow) {
+                nextErrors.betType = `${formatBetTypeLabel(normalizedBetType)} requires exactly ${expected} numbers per set.`;
+              }
             }
           }
-        }
         submitNumbers = parsedRows;
       }
     }
@@ -776,7 +783,7 @@ export default function UploadScreen() {
                   }}
                 >
                   <Text style={[styles.optionBtnText, draft.betType === type && styles.optionBtnTextActive]}>
-                    {type}
+                    {formatBetTypeLabel(type)}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -847,12 +854,12 @@ export default function UploadScreen() {
                   ? 'Invalid rows detected: use exactly 4 digits per line.'
                   : (() => {
                     const betType = normalizeBetType(draft.gameType, draft.betType);
-                    if (betType === 'STANDARD') {
-                      return 'Invalid rows detected: STANDARD needs exactly 6 numbers per set.';
+                    if (betType === 'ORDINARY') {
+                      return 'Invalid rows detected: ORDINARY needs exactly 6 numbers per set.';
                     }
                     const systemMatch = /^SYSTEM_(\d+)$/.exec(betType);
                     if (systemMatch) {
-                      return `Invalid rows detected: ${betType} needs exactly ${systemMatch[1]} numbers per set.`;
+                      return `Invalid rows detected: ${formatBetTypeLabel(betType)} needs exactly ${systemMatch[1]} numbers per set.`;
                     }
                     return 'Invalid rows detected: each set needs 6 to 12 numbers.';
                   })()}
@@ -1533,4 +1540,3 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
 });
-

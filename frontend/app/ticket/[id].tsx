@@ -206,12 +206,12 @@ export default function TicketDetailScreen() {
         <Section title="TOTO Details">
           <InfoField
             label="System"
-            value={ticket.toto_ticket?.is_system ? (ticket.toto_ticket.system_type ?? 'SYSTEM') : 'STANDARD'}
+            value={ticket.toto_ticket?.is_system ? (ticket.toto_ticket.system_type ?? 'SYSTEM') : 'ORDINARY'}
           />
           <Text style={styles.sectionSubTitle}>Selected Numbers</Text>
           <View style={styles.numberRow}>
             {ticket.toto_numbers.map((n) => (
-              <Text key={n} style={styles.numberPill}>{n}</Text>
+              <Text key={n} style={styles.numberPill}>{String(n).padStart(2, '0')}</Text>
             ))}
           </View>
         </Section>
@@ -517,6 +517,8 @@ const styles = StyleSheet.create({
     fontSize: Typography.sm,
     color: Colors.text,
     fontWeight: '700',
+    minWidth: 40,
+    textAlign: 'center',
   },
   comboText: {
     fontSize: Typography.sm,

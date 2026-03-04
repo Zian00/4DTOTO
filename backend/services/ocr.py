@@ -36,7 +36,7 @@ Analyze this Singapore lottery ticket image and return ONLY a JSON object with n
   "draw_number": "5447",
   "draw_numbers": ["5447", "5448"],
   "purchase_datetime": "YYYY-MM-DD HH:MM:SS",
-  "bet_type": "ORDINARY" or "IBET" or "STANDARD" or "SYSTEM_7" to "SYSTEM_12",
+  "bet_type": "ORDINARY" or "IBET" or "SYSTEM_7" to "SYSTEM_12",
   "numbers": [["1234"], ["5678"]],
   "big_amount": "2.00",
   "small_amount": "0.00",
@@ -46,15 +46,33 @@ Analyze this Singapore lottery ticket image and return ONLY a JSON object with n
 
 Rules:
 - For 4D: numbers is an array of 4-digit string arrays e.g. [["1234"], ["5678"]]
-- For TOTO Standard: numbers is one array of 6 number strings e.g. [["01","07","12","23","34","45"]]
+- For TOTO Ordinary: numbers is one array of 6 number strings e.g. [["01","07","12","23","34","45"]]
 - For TOTO System bets: numbers is one array with N number strings e.g. [["01","07","12","23","34","45","49"]]
 - draw_dates can include multiple candidate draw dates if the ticket shows more than one
-- draw_numbers can include multiple candidate draw numbers if the ticket shows more than one
-- purchase_datetime should be the printed purchase timestamp if visible
+- draw_numbers can include multiple candidate draw numbers if the ticket shows more than one (front numeric part only)
+- purchase_datetime MUST be the printed purchase timestamp (transaction time), not draw date/time
 - For 4D amounts, fill big_amount/small_amount/total_price if visible
 - draw_date must be in YYYY-MM-DD format
 - If any field cannot be determined, use null
 - Return ONLY valid JSON, no markdown, no explanation
+
+TOTO date and draw-number disambiguation (important):
+- Text after "DRAW:" with weekday + date is draw schedule info, not purchase time.
+- A token like "3014/15", "0049/14", "0051/14" is a draw-number/year token.
+- For output, use ONLY the front draw number part:
+  - "3014/15" -> "3014"
+  - "0049/14" -> "0049"
+  - "0051/14" -> "0051"
+- Convert draw dates from DD/MM/YY or DD/MM/YYYY to YYYY-MM-DD.
+- purchase_datetime usually appears as a standalone date + time like "16/02/15 08:40am" or "06/10/14 11:37am".
+
+Examples:
+- "DRAW: FRI 27/02/15 ... 3014/15 ... 16/02/15 08:40am"
+  -> draw_date: "2015-02-27", draw_number: "3014", purchase_datetime: "2015-02-16 08:40:00"
+- "DRAW: MON 06/10/14 0049/14 ... 13/10/14 0051/14 ... 06/10/14 11:37am"
+  -> draw_dates includes "2014-10-06" and "2014-10-13"
+  -> draw_numbers includes "0049" and "0051"
+  -> purchase_datetime: "2014-10-06 11:37:00"
 """
 
 
@@ -85,6 +103,8 @@ def _sanitize_output(payload: dict[str, Any]) -> dict[str, Any]:
     bet_type = None
     if isinstance(bet_type_raw, str) and bet_type_raw.strip():
         bet_type = str(bet_type_raw).strip().upper().replace("-", "_").replace(" ", "")
+        if bet_type == "STANDARD":
+            bet_type = "ORDINARY"
 
     raw_text_raw = payload.get("raw_text")
     raw_text = (
@@ -145,7 +165,7 @@ def _enrich_from_raw_text(data: dict[str, Any]) -> dict[str, Any]:
             if system_match:
                 data["bet_type"] = f"SYSTEM_{system_match.group(1)}"
             elif "STANDARD" in upper:
-                data["bet_type"] = "STANDARD"
+                data["bet_type"] = "ORDINARY"
 
     if not data.get("draw_date"):
         draw_match = re.search(r"DRAW[^0-9]*(\d{2}/\d{2}/\d{2,4})", raw_text, re.IGNORECASE)

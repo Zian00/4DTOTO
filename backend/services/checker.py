@@ -73,7 +73,12 @@ async def check_ticket(ticket: Ticket, db: AsyncSession) -> None:
     if loaded_ticket.game_type.value == "4D":
         if not loaded_ticket.four_d_ticket:
             return
-        prize_tier = _check_4d(loaded_ticket.four_d_ticket.number, results)
+        prize_tier = _check_4d(
+            loaded_ticket.four_d_ticket.number,
+            results,
+            big_amount=loaded_ticket.four_d_ticket.big_amount,
+            small_amount=loaded_ticket.four_d_ticket.small_amount,
+        )
     else:
         combinations = [row.combination for row in loaded_ticket.toto_expanded_combinations]
         if not combinations and loaded_ticket.toto_numbers:
@@ -98,22 +103,22 @@ async def check_ticket(ticket: Ticket, db: AsyncSession) -> None:
     await db.commit()
 
 
-def _check_4d(number: str, results: dict) -> str | None:
+def _check_4d(number: str, results: dict, *, big_amount=0, small_amount=0) -> str | None:
     candidate = number.strip()
-    if candidate == str(results.get("1st", "")).strip():
-        return "1st Prize"
-    if candidate == str(results.get("2nd", "")).strip():
-        return "2nd Prize"
-    if candidate == str(results.get("3rd", "")).strip():
-        return "3rd Prize"
 
-    starters = {str(v).strip() for v in results.get("starter", []) if str(v).strip()}
-    if candidate in starters:
-        return "Starter"
+    # 1st / 2nd / 3rd: wins for both Big and Small bets
+    for key, label in (("1st", "1st Prize"), ("2nd", "2nd Prize"), ("3rd", "3rd Prize")):
+        if candidate == str(results.get(key, "")).strip():
+            return label
 
-    consolations = {str(v).strip() for v in results.get("consolation", []) if str(v).strip()}
-    if candidate in consolations:
-        return "Consolation"
+    # Starter / Consolation: only win for Big bets
+    if big_amount:
+        starters = {str(v).strip() for v in results.get("starter", []) if str(v).strip()}
+        if candidate in starters:
+            return "Starter"
+        consolations = {str(v).strip() for v in results.get("consolation", []) if str(v).strip()}
+        if candidate in consolations:
+            return "Consolation"
 
     return None
 

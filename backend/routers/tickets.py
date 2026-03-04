@@ -421,10 +421,12 @@ def _parse_ocr_data(
         purchase_datetime = None
 
     bet_type_raw = str(ocr_data.get("bet_type") or "").strip()
-    if bet_type_raw:
+    if game_type == "TOTO":
+        bet_type = _normalize_toto_bet_type(bet_type_raw, strict=False)
+    elif bet_type_raw:
         bet_type = bet_type_raw
     else:
-        bet_type = "STANDARD" if game_type == "TOTO" else "ORDINARY"
+        bet_type = "ORDINARY"
     numbers = _normalize_numbers(ocr_data.get("numbers"))
     raw_text = str(ocr_data.get("raw_text") or "")
     big_amount = _normalize_amount_for_preview(ocr_data.get("big_amount"))
@@ -652,24 +654,60 @@ def _parse_toto_mode(
     selected_numbers: list[int],
     raw_bet_type: str | None,
 ) -> tuple[bool, TotoSystemType | None]:
-    explicit_system = _parse_system_type(raw_bet_type)
-    if len(selected_numbers) == 6 and explicit_system is None:
-        return False, None
+    token = (raw_bet_type or "").strip()
+    if not token:
+        if len(selected_numbers) == 6:
+            return False, None
+        inferred = _system_enum_from_n(len(selected_numbers))
+        if not inferred:
+            raise HTTPException(status_code=400, detail="System bet must have 7 to 12 unique numbers")
+        return True, inferred
 
-    system_n = len(selected_numbers)
-    inferred = _system_enum_from_n(system_n)
-    system_type = explicit_system or inferred
-    if not system_type:
-        raise HTTPException(status_code=400, detail="System bet must have 7 to 12 unique numbers")
-
-    if explicit_system is not None:
-        explicit_n = int(explicit_system.value.split("_")[1])
-        if explicit_n != system_n:
+    normalized = _normalize_toto_bet_type(token, strict=True)
+    if normalized == "ORDINARY":
+        if len(selected_numbers) != 6:
             raise HTTPException(
                 status_code=400,
-                detail=f"system_type {explicit_system.value} requires exactly {explicit_n} numbers",
+                detail="ORDINARY requires exactly 6 unique numbers",
             )
-    return True, system_type
+        return False, None
+
+    explicit_system = _parse_system_type(normalized)
+    if explicit_system is None:
+        raise HTTPException(
+            status_code=400,
+            detail="TOTO bet_type must be ORDINARY or SYSTEM_7 to SYSTEM_12",
+        )
+
+    system_n = len(selected_numbers)
+    explicit_n = int(explicit_system.value.split("_")[1])
+    if explicit_n != system_n:
+        raise HTTPException(
+            status_code=400,
+            detail=f"system_type {explicit_system.value} requires exactly {explicit_n} numbers",
+        )
+    return True, explicit_system
+
+
+def _normalize_toto_bet_type(raw: str | None, *, strict: bool) -> str:
+    token = (raw or "").strip().upper().replace(" ", "").replace("-", "_")
+    token = token.replace("SYSTEM", "SYSTEM_")
+    token = re.sub(r"_+", "_", token)
+    token = token.strip("_")
+
+    if token in ("", "STANDARD", "ORDINARY"):
+        return "ORDINARY"
+
+    system_type = _parse_system_type(token)
+    if system_type is not None:
+        return system_type.value
+
+    if strict:
+        raise HTTPException(
+            status_code=400,
+            detail="TOTO bet_type must be ORDINARY or SYSTEM_7 to SYSTEM_12",
+        )
+    return "ORDINARY"
 
 
 def _parse_system_type(raw: str | None) -> TotoSystemType | None:
@@ -802,7 +840,7 @@ def _ticket_display_data(ticket: Ticket) -> tuple[str | None, list[str]]:
         if ticket.toto_ticket and ticket.toto_ticket.is_system:
             label = ticket.toto_ticket.system_type.value if ticket.toto_ticket.system_type else "SYSTEM"
         else:
-            label = "STANDARD"
+            label = "ORDINARY"
         return label, numbers
 
     return None, []
