@@ -8,7 +8,6 @@ import {
   View,
 } from 'react-native';
 import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 
 import { ToastContainer, useToastState } from '../components/Toast';
 import { ToastContext } from '../hooks/useToast';
@@ -39,9 +38,10 @@ export default function RootLayout() {
 
   return (
     <ToastContext.Provider value={{ showToast }}>
-      <StatusBar style="light" />
-
-      <Stack>
+      <Stack
+        screenOptions={{
+          statusBarStyle: 'light',
+        }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
           name="ticket/[id]"
