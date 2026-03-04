@@ -109,6 +109,7 @@ export interface TicketListItem {
   status: 'PENDING' | 'WON' | 'LOST';
   is_winner: boolean | null;
   prize_tier: string | null;
+  image_url?: string | null;
 }
 
 export interface FourDTicketOut {
@@ -155,6 +156,8 @@ export interface TicketDetail {
   toto_numbers: number[];
   toto_expanded_combinations: string[];
   notifications: NotificationOut[];
+  image_url?: string | null;
+  raw_ocr_text?: string | null;
 }
 
 export interface DrawResultResponse {
@@ -257,7 +260,9 @@ export async function listTickets(params?: {
   sort?: string;
   filter?: string;
 }): Promise<TicketListItem[]> {
-  const qs = new URLSearchParams({ ...params }).toString();
+  const qs = new URLSearchParams(
+    Object.entries(params ?? {}).filter(([, v]) => v != null) as [string, string][]
+  ).toString();
   return request<TicketListItem[]>(`/api/tickets${qs ? `?${qs}` : ''}`);
 }
 
@@ -289,6 +294,6 @@ export async function getResult(
   return request<DrawResultResponse>(`/api/results/${gameType}/${drawDate}`);
 }
 
-export async function getPredictions(): Promise<PredictionResponse> {
-  return request<PredictionResponse>('/api/predictions');
+export async function getPredictions(): Promise<PredictionResponse[]> {
+  return request<PredictionResponse[]>('/api/predictions');
 }

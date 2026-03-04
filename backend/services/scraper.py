@@ -12,6 +12,7 @@ import os
 import re
 from datetime import date, datetime
 
+import certifi
 import httpx
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
@@ -174,7 +175,7 @@ def _find_draw_query_string(draw_list_html: str, draw_date_str: str) -> str | No
 async def _http_get(url: str) -> str | None:
     try:
         async with httpx.AsyncClient(
-            timeout=15, headers=_HEADERS, follow_redirects=True
+            timeout=15, headers=_HEADERS, follow_redirects=True, verify=certifi.where()
         ) as client:
             resp = await client.get(url)
             resp.raise_for_status()

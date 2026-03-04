@@ -61,6 +61,7 @@ class TicketListItem(BaseModel):
     bet_label: str | None = None
     is_winner: bool | None = None
     prize_tier: str | None = None
+    image_url: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -108,6 +109,8 @@ class TicketDetail(BaseModel):
     toto_numbers: list[int] = Field(default_factory=list)
     toto_expanded_combinations: list[str] = Field(default_factory=list)
     notifications: list[NotificationOut] = Field(default_factory=list)
+    image_url: str | None = None
+    raw_ocr_text: str | None = None
 
     model_config = {"from_attributes": True}
 

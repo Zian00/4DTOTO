@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,7 +13,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { Colors, Radius, Spacing, Typography } from '../../constants/theme';
 import { useToast } from '../../hooks/useToast';
-import { deleteTicket, getTicket, type TicketDetail } from '../../services/api';
+import { deleteTicket, getApiBaseUrl, getTicket, type TicketDetail } from '../../services/api';
 
 function StatusBadge({ status }: { status: 'PENDING' | 'WON' | 'LOST' }) {
   let label: string = 'Pending';
@@ -96,6 +97,14 @@ export default function TicketDetailScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {ticket.image_url && (
+        <Image
+          source={{ uri: getApiBaseUrl() + ticket.image_url }}
+          style={styles.ticketImage}
+          resizeMode="contain"
+        />
+      )}
+
       <View style={styles.infoCard}>
         <View style={styles.infoRow}>
           <View style={[styles.gameTag, {
@@ -167,6 +176,12 @@ export default function TicketDetailScreen() {
         </Section>
       )}
 
+      {ticket.raw_ocr_text && (
+        <Section title="Raw OCR Text">
+          <Text style={styles.ocrText}>{ticket.raw_ocr_text}</Text>
+        </Section>
+      )}
+
       <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
         <Text style={styles.deleteBtnText}>Delete Ticket</Text>
       </TouchableOpacity>
@@ -195,6 +210,19 @@ function InfoField({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   content: { padding: Spacing.md, paddingBottom: Spacing.xl },
+  ticketImage: {
+    width: '100%',
+    height: 220,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.surfaceAlt,
+    marginBottom: Spacing.md,
+  },
+  ocrText: {
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    fontFamily: 'monospace',
+    lineHeight: 18,
+  },
   center: {
     flex: 1,
     alignItems: 'center',

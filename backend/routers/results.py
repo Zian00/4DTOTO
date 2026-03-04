@@ -16,7 +16,7 @@ _SEED_THRESHOLD = 3  # scrape fresh data if fewer than this many draws are cache
 
 # ── List (paginated) ──────────────────────────────────────────────────────────
 
-@router.get("/", response_model=PaginatedResults)
+@router.get("", response_model=PaginatedResults)
 async def list_results(
     game_type: str | None = None,
     page: int = 1,

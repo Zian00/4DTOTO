@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -12,7 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Colors, Radius, Spacing, Typography } from '../../constants/theme';
 import { useToast } from '../../hooks/useToast';
-import { listTickets, type TicketListItem } from '../../services/api';
+import { getApiBaseUrl, listTickets, type TicketListItem } from '../../services/api';
 
 const NOTIFIED_KEY = '@fourdtoto/notified_tickets';
 
@@ -59,11 +60,22 @@ function TicketCard({
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.cardRow}>
-        <View style={[styles.badge, { backgroundColor: item.game_type === '4D' ? Colors.primary : Colors.accent }]}>
-          <Text style={styles.badgeText}>{item.game_type}</Text>
-        </View>
+        {item.image_url ? (
+          <Image source={{ uri: getApiBaseUrl() + item.image_url }} style={styles.thumbnail} resizeMode="cover" />
+        ) : (
+          <View style={[styles.badge, { backgroundColor: item.game_type === '4D' ? Colors.primary : Colors.accent }]}>
+            <Text style={styles.badgeText}>{item.game_type}</Text>
+          </View>
+        )}
         <View style={styles.cardInfo}>
-          <Text style={styles.cardDate}>Draw: {drawDate}</Text>
+          <View style={styles.cardTitleRow}>
+            {item.image_url && (
+              <View style={[styles.badgeSmall, { backgroundColor: item.game_type === '4D' ? Colors.primary : Colors.accent }]}>
+                <Text style={styles.badgeSmallText}>{item.game_type}</Text>
+              </View>
+            )}
+            <Text style={styles.cardDate}>Draw: {drawDate}</Text>
+          </View>
           <Text style={styles.cardMeta}>Total: ${item.total_price}</Text>
           {item.bet_label && (
             <Text style={styles.cardBetType}>{item.bet_label}</Text>
@@ -247,13 +259,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.sm,
   },
+  thumbnail: {
+    width: 56,
+    height: 56,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.surfaceAlt,
+  },
   badge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: Radius.sm,
   },
   badgeText: { color: '#fff', fontWeight: '800', fontSize: Typography.sm },
+  badgeSmall: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: Radius.sm,
+  },
+  badgeSmallText: { color: '#fff', fontWeight: '800', fontSize: Typography.xs },
   cardInfo: { flex: 1 },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginBottom: 2 },
   cardDate: { fontSize: Typography.base, fontWeight: '600', color: Colors.text },
   cardMeta: { fontSize: Typography.xs, color: Colors.textSecondary, marginTop: 2 },
   cardBetType: { fontSize: Typography.xs, color: Colors.textSecondary, marginTop: 2 },

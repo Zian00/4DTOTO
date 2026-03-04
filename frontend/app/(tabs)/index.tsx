@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,7 +17,6 @@ import { Colors, Radius, Spacing, Typography } from '../../constants/theme';
 import { useToast } from '../../hooks/useToast';
 import {
   confirmTicket,
-  getApiBaseUrl,
   uploadTicket,
   type TicketPreviewResponse,
 } from '../../services/api';
@@ -259,11 +258,6 @@ export default function UploadScreen() {
     ? buildDateDrawPairs(draft.drawDatesText, draft.drawNumbersText)
     : [];
 
-  useEffect(() => {
-    if (__DEV__) {
-      console.log('[API][base]', getApiBaseUrl());
-    }
-  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -320,9 +314,6 @@ export default function UploadScreen() {
 
     try {
       const response = await uploadTicket(selectedUri);
-      if (__DEV__) {
-        console.log('[OCR][preview raw]', response.raw_ocr_text ?? '<empty>');
-      }
       const nextDraft = toDraft(response);
       setDraft(nextDraft);
       setUploadState('review');
@@ -406,9 +397,6 @@ export default function UploadScreen() {
     setUploadMsg('Confirming ticket and starting result checks...');
 
     try {
-      if (__DEV__) {
-        console.log('[OCR][confirm raw]', draft.rawText || '<empty>');
-      }
       const response = await confirmTicket(selectedUri, {
         game_type: draft.gameType,
         draw_dates: drawDates,
@@ -514,6 +502,74 @@ export default function UploadScreen() {
             ))}
           </View>
 
+          {/* 1. Bet Type */}
+          <Text style={styles.inputLabel}>Bet Type</Text>
+          <TextInput
+            style={styles.input}
+            value={draft.betType}
+            onChangeText={(text) => setDraft((prev) => (prev ? { ...prev, betType: text } : prev))}
+            autoCapitalize="none"
+            placeholder={draft.gameType === 'TOTO' ? 'STANDARD or SYSTEM_7..SYSTEM_12' : 'ORDINARY or IBET'}
+            placeholderTextColor={Colors.textSecondary}
+          />
+
+          {/* 2. Numbers */}
+          <Text style={styles.inputLabel}>
+            Numbers ({draft.gameType === '4D' ? 'one 4-digit number per line' : 'one set per line, space-separated'})
+          </Text>
+          <TextInput
+            style={[styles.input, styles.numbersInput]}
+            value={draft.numbersText}
+            onChangeText={(text) => setDraft((prev) => (prev ? { ...prev, numbersText: text } : prev))}
+            multiline
+            autoCapitalize="none"
+            placeholder={draft.gameType === '4D' ? '1234\n5678' : '1 7 12 23 34 45\n2 8 14 21 33 47'}
+            placeholderTextColor={Colors.textSecondary}
+          />
+
+          {/* 3. Big / Small amounts + Total (4D only) */}
+          {draft.gameType === '4D' && (
+            <View style={styles.amountRow}>
+              <View style={styles.amountCol}>
+                <Text style={styles.inputLabel}>Big ($)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={draft.bigAmount}
+                  onChangeText={(text) => setDraft((prev) => {
+                    if (!prev) return prev;
+                    const total = ((Number.parseFloat(text) || 0) + (Number.parseFloat(prev.smallAmount) || 0)).toFixed(2);
+                    return { ...prev, bigAmount: text, totalPrice: total };
+                  })}
+                  keyboardType="decimal-pad"
+                  placeholder="0.00"
+                  placeholderTextColor={Colors.textSecondary}
+                />
+              </View>
+              <View style={styles.amountCol}>
+                <Text style={styles.inputLabel}>Small ($)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={draft.smallAmount}
+                  onChangeText={(text) => setDraft((prev) => {
+                    if (!prev) return prev;
+                    const total = ((Number.parseFloat(prev.bigAmount) || 0) + (Number.parseFloat(text) || 0)).toFixed(2);
+                    return { ...prev, smallAmount: text, totalPrice: total };
+                  })}
+                  keyboardType="decimal-pad"
+                  placeholder="1.00"
+                  placeholderTextColor={Colors.textSecondary}
+                />
+              </View>
+              <View style={styles.amountCol}>
+                <Text style={styles.inputLabel}>Price ($)</Text>
+                <View style={[styles.input, styles.totalInline]}>
+                  <Text style={styles.totalInlineText}>{draft.totalPrice}</Text>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* 4. Draw Dates */}
           <Text style={styles.inputLabel}>Draw Dates (DD/MM/YYYY, one per line)</Text>
           <TextInput
             style={[styles.input, styles.drawDatesInput]}
@@ -553,6 +609,7 @@ export default function UploadScreen() {
             </View>
           )}
 
+          {/* 5. Draw Numbers */}
           <Text style={styles.inputLabel}>Draw Numbers (optional, one per line)</Text>
           <TextInput
             style={[styles.input, styles.drawNumbersInput]}
@@ -596,7 +653,7 @@ export default function UploadScreen() {
           )}
 
           <View style={styles.mappingBox}>
-            <Text style={styles.mappingTitle}>Date and Draw Number Mapping</Text>
+            <Text style={styles.mappingTitle}>Date → Draw Number Mapping</Text>
             {mappingPairs.length > 0 ? (
               mappingPairs.map((pair) => (
                 <View key={`${pair.drawDate}-${pair.drawNumber || 'empty'}`} style={styles.mappingRow}>
@@ -614,7 +671,8 @@ export default function UploadScreen() {
             )}
           </View>
 
-          <Text style={styles.inputLabel}>Purchase Date (DD/MM/YYYY HH:MM AM/PM)</Text>
+          {/* 6. Purchase DateTime */}
+          <Text style={styles.inputLabel}>Purchase Date &amp; Time (DD/MM/YYYY HH:MM AM/PM)</Text>
           <TextInput
             style={styles.input}
             value={draft.purchaseDatetime}
@@ -623,71 +681,6 @@ export default function UploadScreen() {
             placeholder="21/02/2026 01:28 PM"
             placeholderTextColor={Colors.textSecondary}
           />
-
-          <Text style={styles.inputLabel}>Bet Type</Text>
-          <TextInput
-            style={styles.input}
-            value={draft.betType}
-            onChangeText={(text) => setDraft((prev) => (prev ? { ...prev, betType: text } : prev))}
-            autoCapitalize="none"
-            placeholder={draft.gameType === 'TOTO' ? 'STANDARD or SYSTEM_7..SYSTEM_12' : 'ORDINARY or IBET'}
-            placeholderTextColor={Colors.textSecondary}
-          />
-
-          <Text style={styles.inputLabel}>
-            Numbers ({draft.gameType === '4D' ? 'one 4-digit number per line' : 'one set per line, space-separated'})
-          </Text>
-          <TextInput
-            style={[styles.input, styles.numbersInput]}
-            value={draft.numbersText}
-            onChangeText={(text) => setDraft((prev) => (prev ? { ...prev, numbersText: text } : prev))}
-            multiline
-            autoCapitalize="none"
-            placeholder={draft.gameType === '4D' ? '1234\n5678' : '1 7 12 23 34 45\n2 8 14 21 33 47'}
-            placeholderTextColor={Colors.textSecondary}
-          />
-
-          {draft.gameType === '4D' && (
-            <View style={styles.amountRow}>
-              <View style={styles.amountCol}>
-                <Text style={styles.inputLabel}>Big Amount</Text>
-                <TextInput
-                  style={styles.input}
-                  value={draft.bigAmount}
-                  onChangeText={(text) => setDraft((prev) => {
-                    if (!prev) return prev;
-                    const nextBig = text;
-                    const total = ((Number.parseFloat(nextBig) || 0) + (Number.parseFloat(prev.smallAmount) || 0)).toFixed(2);
-                    return { ...prev, bigAmount: nextBig, totalPrice: total };
-                  })}
-                  keyboardType="decimal-pad"
-                  placeholder="0.00"
-                  placeholderTextColor={Colors.textSecondary}
-                />
-              </View>
-              <View style={styles.amountCol}>
-                <Text style={styles.inputLabel}>Small Amount</Text>
-                <TextInput
-                  style={styles.input}
-                  value={draft.smallAmount}
-                  onChangeText={(text) => setDraft((prev) => {
-                    if (!prev) return prev;
-                    const nextSmall = text;
-                    const total = ((Number.parseFloat(prev.bigAmount) || 0) + (Number.parseFloat(nextSmall) || 0)).toFixed(2);
-                    return { ...prev, smallAmount: nextSmall, totalPrice: total };
-                  })}
-                  keyboardType="decimal-pad"
-                  placeholder="1.00"
-                  placeholderTextColor={Colors.textSecondary}
-                />
-              </View>
-            </View>
-          )}
-
-          <View style={styles.totalPriceBox}>
-            <Text style={styles.totalPriceLabel}>Estimated Total Price</Text>
-            <Text style={styles.totalPriceValue}>${draft.totalPrice}</Text>
-          </View>
 
           {draft.rawText ? (
             <View style={styles.rawBox}>
@@ -974,23 +967,14 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     padding: Spacing.sm,
   },
-  totalPriceBox: {
-    backgroundColor: Colors.surfaceAlt,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: Spacing.sm,
+  totalInline: {
+    justifyContent: 'center',
   },
-  totalPriceLabel: {
-    fontSize: Typography.xs,
-    color: Colors.textSecondary,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  totalPriceValue: {
+  totalInlineText: {
     fontSize: Typography.base,
     color: Colors.text,
     fontWeight: '700',
+    paddingVertical: 2,
   },
   rawTitle: {
     fontSize: Typography.xs,

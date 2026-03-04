@@ -79,6 +79,8 @@ class Ticket(Base):
     )
     draw_date: Mapped[date] = mapped_column(Date, nullable=False)
     draw_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    image_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    raw_ocr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     total_price: Mapped[Decimal] = mapped_column(
         Numeric(12, 2),
         nullable=False,

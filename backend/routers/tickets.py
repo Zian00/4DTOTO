@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import traceback
 import uuid
@@ -123,6 +124,8 @@ async def confirm_ticket(
     draw_numbers = _parse_draw_numbers(draw_numbers_json, draw_number, draw_dates)
     purchase_group_id = uuid.uuid4()
 
+    saved_image_filename = _save_image(image_bytes, file.content_type, str(purchase_group_id))
+
     try:
         parsed_numbers = json.loads(numbers_json)
     except json.JSONDecodeError:
@@ -205,6 +208,10 @@ async def confirm_ticket(
     if not created_tickets:
         raise HTTPException(status_code=400, detail="No ticket entries could be generated")
 
+    for ticket in created_tickets:
+        ticket.image_path = saved_image_filename
+        ticket.raw_ocr_text = raw_ocr_text
+
     _log_raw_ocr_text(raw_ocr_text, context="confirm")
     db.add_all(created_tickets)
     await db.commit()
@@ -239,7 +246,7 @@ async def confirm_ticket(
     )
 
 
-@router.get("/", response_model=list[TicketListItem])
+@router.get("", response_model=list[TicketListItem])
 async def list_tickets(
     sort: str = "newest",
     filter: str | None = None,
@@ -281,6 +288,7 @@ async def list_tickets(
                 bet_label=bet_label,
                 is_winner=_winner_flag(ticket.status),
                 prize_tier=_extract_prize_tier(ticket.notifications),
+                image_url=_build_image_url(ticket.image_path),
             )
         )
 
@@ -325,6 +333,8 @@ async def get_ticket(ticket_id: str, db: AsyncSession = Depends(get_db)):
         toto_numbers=[n.number for n in sorted(ticket.toto_numbers, key=lambda row: row.number)],
         toto_expanded_combinations=[row.combination for row in ticket.toto_expanded_combinations],
         notifications=ticket.notifications,
+        image_url=_build_image_url(ticket.image_path),
+        raw_ocr_text=ticket.raw_ocr_text,
     )
 
 
@@ -793,3 +803,20 @@ def _ticket_display_data(ticket: Ticket) -> tuple[str | None, list[str]]:
         return label, numbers
 
     return None, []
+
+
+def _build_image_url(image_path: str | None) -> str | None:
+    if not image_path:
+        return None
+    return f"/uploads/{image_path}"
+
+
+def _save_image(image_bytes: bytes, content_type: str | None, filename_stem: str) -> str:
+    """Save image bytes to uploads dir. Returns the filename (not full path)."""
+    upload_dir = os.getenv("UPLOAD_DIR", "./uploads")
+    os.makedirs(upload_dir, exist_ok=True)
+    ext = (content_type or "image/jpeg").split("/")[-1].split(";")[0].strip() or "jpg"
+    filename = f"{filename_stem}.{ext}"
+    with open(os.path.join(upload_dir, filename), "wb") as f:
+        f.write(image_bytes)
+    return filename
