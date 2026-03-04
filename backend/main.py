@@ -1,12 +1,11 @@
 import asyncio
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-import os
 
-from dotenv import load_dotenv
-load_dotenv()
+from config import settings
 
 # Minimum cached draws before startup auto-seed is skipped
 _SEED_THRESHOLDS = {"4D": 50, "TOTO": 30}
@@ -18,10 +17,11 @@ async def _auto_seed_historical() -> None:
     doesn't yet have enough data. Safe to run concurrently with serving traffic.
     Already-cached draws are skipped; idempotent if re-run.
     """
+    from sqlalchemy import func, select
+
     from database import AsyncSessionLocal
     from models import DrawResult
     from services.scraper import scrape_all_historical
-    from sqlalchemy import func, select
 
     async with AsyncSessionLocal() as db:
         for gt, threshold in _SEED_THRESHOLDS.items():
@@ -45,6 +45,7 @@ async def _auto_seed_historical() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from services.scheduler import start_scheduler
+
     start_scheduler()
     asyncio.create_task(_auto_seed_historical())
     yield
@@ -59,11 +60,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-upload_dir = os.getenv("UPLOAD_DIR", "./uploads")
-os.makedirs(upload_dir, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
+import os
 
-from routers import tickets, results, predictions
+os.makedirs(settings.upload_dir, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
+
+from routers import predictions, results, tickets
 
 app.include_router(tickets.router, prefix="/api/tickets", tags=["tickets"])
 app.include_router(results.router, prefix="/api/results", tags=["results"])

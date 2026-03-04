@@ -8,22 +8,19 @@ Strategy (confirmed via Chrome DevTools network inspection, 2026-03-03):
 """
 
 import asyncio
-import os
 import re
 from datetime import date, datetime, timezone
 
 import certifi
 import httpx
 from bs4 import BeautifulSoup
-from dotenv import load_dotenv
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import settings
 from models import DrawResult
 
-load_dotenv()
-
-SCRAPE_DELAY = int(os.getenv("SCRAPE_DELAY_SECONDS", 2))
+SCRAPE_DELAY = settings.scrape_delay_seconds
 
 _BASE = "https://www.singaporepools.com.sg/DataFileArchive/Lottery/Output"
 

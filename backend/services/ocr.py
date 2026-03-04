@@ -1,16 +1,14 @@
 import base64
 import json
-import os
 import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from dotenv import load_dotenv
 import httpx
 from pydantic import BaseModel
 
-load_dotenv()
+from config import settings
 
 
 class TicketOcrResponse(BaseModel):
@@ -77,8 +75,9 @@ Examples:
 
 
 MODEL_NAME = "gemini-2.5-flash"
-_API_KEY = os.getenv("GEMINI_API_KEY")
-_GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent"
+_GEMINI_URL = (
+    f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent"
+)
 
 
 def _sanitize_output(payload: dict[str, Any]) -> dict[str, Any]:
@@ -385,7 +384,7 @@ async def extract_ticket(image_bytes: bytes, mime_type: str | None = None) -> di
     Raises ValueError if the response cannot be parsed as valid JSON.
     """
     image_mime = mime_type or "image/jpeg"
-    if not _API_KEY:
+    if not settings.gemini_api_key:
         raise ValueError("GEMINI_API_KEY is not configured")
 
     body = {
@@ -410,7 +409,7 @@ async def extract_ticket(image_bytes: bytes, mime_type: str | None = None) -> di
 
     # Ignore broken proxy/SSL env vars (e.g. invalid SSL_CERT_FILE) from host env.
     async with httpx.AsyncClient(timeout=45, trust_env=False) as client:
-        resp = await client.post(_GEMINI_URL, params={"key": _API_KEY}, json=body)
+        resp = await client.post(_GEMINI_URL, params={"key": settings.gemini_api_key}, json=body)
         resp.raise_for_status()
         data = resp.json()
 
