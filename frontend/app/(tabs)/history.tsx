@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  Modal,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -17,10 +19,30 @@ import { getApiBaseUrl, listTickets, type TicketListItem } from '../../services/
 
 const NOTIFIED_KEY = '@fourdtoto/notified_tickets';
 
-const SORTS = ['newest', 'winning'] as const;
-const FILTERS = ['all', '4D', 'TOTO', 'system', 'winning'] as const;
-type Sort = (typeof SORTS)[number];
-type Filter = (typeof FILTERS)[number];
+const FILTER_OPTIONS = [
+  { key: 'all', label: 'All' },
+  { key: '4D', label: '4D only' },
+  { key: 'TOTO', label: 'TOTO only' },
+  { key: 'system', label: 'System bets' },
+  { key: 'winning', label: 'Winners' },
+] as const;
+
+type Sort = 'newest' | 'oldest';
+type Filter = (typeof FILTER_OPTIONS)[number]['key'];
+
+function toEpoch(value: string): number {
+  return new Date(value).getTime();
+}
+
+function sortTickets(items: TicketListItem[], sort: Sort): TicketListItem[] {
+  const sorted = [...items];
+  if (sort === 'oldest') {
+    sorted.sort((a, b) => toEpoch(a.purchase_datetime) - toEpoch(b.purchase_datetime));
+    return sorted;
+  }
+  sorted.sort((a, b) => toEpoch(b.purchase_datetime) - toEpoch(a.purchase_datetime));
+  return sorted;
+}
 
 function StatusChip({ item }: { item: TicketListItem }) {
   let label: string = 'Pending';
@@ -28,7 +50,7 @@ function StatusChip({ item }: { item: TicketListItem }) {
   let fg: string = Colors.textSecondary;
 
   if (item.status === 'WON') {
-    label = `Won${item.prize_tier ? ` (${item.prize_tier})` : ''}`;
+    label = item.prize_tier ? `Won (${item.prize_tier})` : 'Won';
     bg = Colors.winBg;
     fg = Colors.win;
   } else if (item.status === 'LOST') {
@@ -83,11 +105,6 @@ function TicketCard({
         </View>
         <StatusChip item={item} />
       </View>
-      {item.status === 'WON' && item.prize_tier && (
-        <View style={styles.winBanner}>
-          <Text style={styles.winBannerText}>Prize: {item.prize_tier}</Text>
-        </View>
-      )}
     </TouchableOpacity>
   );
 }
@@ -99,16 +116,18 @@ export default function HistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState<Sort>('newest');
   const [filter, setFilter] = useState<Filter>('all');
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
 
   async function loadTickets(s: Sort = sort, f: Filter = filter) {
     setLoading(true);
     try {
       const items = await listTickets({
-        sort: s,
+        sort: 'newest',
         filter: f === 'all' ? undefined : f,
       });
-      setTickets(items);
-      await checkForNewResults(items);
+      const sorted = sortTickets(items, s);
+      setTickets(sorted);
+      await checkForNewResults(sorted);
     } catch {
       showToast('Could not load tickets', 'error');
     } finally {
@@ -128,7 +147,10 @@ export default function HistoryScreen() {
     );
 
     for (const t of newWins) {
-      showToast(`You won! ${t.prize_tier ?? ''} on your ${t.game_type} ticket`, 'win');
+      showToast(
+        `You won${t.prize_tier ? ` (${t.prize_tier})` : ''} on your ${t.game_type} ticket`,
+        'win',
+      );
       notifiedIds.push(t.id);
     }
     if (newWins.length === 0 && newLosses.length > 0) {
@@ -143,50 +165,42 @@ export default function HistoryScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void loadTickets();
+      void loadTickets(sort, filter);
     }, [sort, filter]),
   );
 
-  function handleSortChange(s: Sort) {
-    setSort(s);
-    void loadTickets(s, filter);
+  function toggleSort() {
+    setSort((prev) => (prev === 'newest' ? 'oldest' : 'newest'));
   }
 
   function handleFilterChange(f: Filter) {
+    if (filter === f) return;
     setFilter(f);
-    void loadTickets(sort, f);
+    setIsFilterModalOpen(false);
+  }
+
+  function currentFilterLabel(): string {
+    const found = FILTER_OPTIONS.find((opt) => opt.key === filter);
+    return found?.label ?? 'All';
   }
 
   return (
     <View style={styles.container}>
       <View style={styles.controlBar}>
-        <Text style={styles.controlLabel}>Sort:</Text>
-        {SORTS.map((s) => (
-          <TouchableOpacity
-            key={s}
-            style={[styles.pill, sort === s && styles.pillActive]}
-            onPress={() => handleSortChange(s)}
-          >
-            <Text style={[styles.pillText, sort === s && styles.pillTextActive]}>
-              {s === 'newest' ? 'Newest' : 'Winning'}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <View style={styles.controlBar}>
-        <Text style={styles.controlLabel}>Filter:</Text>
-        {FILTERS.map((f) => (
-          <TouchableOpacity
-            key={f}
-            style={[styles.pill, filter === f && styles.pillActive]}
-            onPress={() => handleFilterChange(f)}
-          >
-            <Text style={[styles.pillText, filter === f && styles.pillTextActive]}>
-              {f === 'all' ? 'All' : f === 'system' ? 'System' : f === 'winning' ? 'Wins' : f}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        <TouchableOpacity
+          style={styles.selectorButton}
+          onPress={toggleSort}
+        >
+          <Text style={styles.selectorButtonText}>
+            {sort === 'newest' ? 'Sort: Newest first' : 'Sort: Oldest first'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.selectorButton}
+          onPress={() => setIsFilterModalOpen(true)}
+        >
+          <Text style={styles.selectorButtonText}>{`Filter: ${currentFilterLabel()}`}</Text>
+        </TouchableOpacity>
       </View>
 
       {loading ? (
@@ -209,6 +223,30 @@ export default function HistoryScreen() {
           refreshing={loading}
         />
       )}
+
+      <Modal
+        visible={isFilterModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsFilterModalOpen(false)}
+      >
+        <Pressable style={styles.filterOverlay} onPress={() => setIsFilterModalOpen(false)}>
+          <Pressable style={styles.filterDropdown} onPress={() => {}}>
+            <Text style={styles.filterTitle}>Select Filter</Text>
+            {FILTER_OPTIONS.map(({ key, label }) => (
+              <TouchableOpacity
+                key={key}
+                style={[styles.filterOption, filter === key && styles.filterOptionActive]}
+                onPress={() => handleFilterChange(key)}
+              >
+                <Text style={[styles.filterOptionText, filter === key && styles.filterOptionTextActive]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -218,34 +256,66 @@ const styles = StyleSheet.create({
   controlBar: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     backgroundColor: Colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
-    gap: Spacing.xs,
-    flexWrap: 'wrap',
+    gap: Spacing.sm,
   },
-  controlLabel: {
-    fontSize: Typography.xs,
-    color: Colors.textSecondary,
-    fontWeight: '600',
-    marginRight: 2,
-  },
-  pill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.surfaceAlt,
+  selectorButton: {
+    flex: 1,
     borderWidth: 1,
     borderColor: Colors.border,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.surfaceAlt,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
-  pillActive: {
+  selectorButtonText: {
+    fontSize: Typography.xs,
+    color: Colors.text,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  filterOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'center',
+    padding: Spacing.lg,
+  },
+  filterDropdown: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.md,
+    gap: Spacing.xs,
+  },
+  filterTitle: {
+    fontSize: Typography.sm,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: Spacing.xs,
+  },
+  filterOption: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.surfaceAlt,
+  },
+  filterOptionActive: {
     backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
   },
-  pillText: { fontSize: Typography.xs, color: Colors.textSecondary, fontWeight: '600' },
-  pillTextActive: { color: '#fff' },
+  filterOptionText: {
+    fontSize: Typography.sm,
+    color: Colors.text,
+    fontWeight: '600',
+  },
+  filterOptionTextActive: {
+    color: '#fff',
+  },
   list: { padding: Spacing.md, gap: Spacing.sm },
   card: {
     backgroundColor: Colors.surface,

@@ -49,6 +49,8 @@ export default function RootLayout() {
             title: 'Ticket Detail',
             headerStyle: { backgroundColor: Colors.primary },
             headerTintColor: '#fff',
+            headerBackVisible: false,
+            headerLeft: () => null,
           }}
         />
       </Stack>

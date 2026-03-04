@@ -2,6 +2,8 @@ import { type ReactNode, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Modal,
+  Pressable,
   Image,
   ScrollView,
   StyleSheet,
@@ -43,6 +45,11 @@ export default function TicketDetailScreen() {
   const { showToast } = useToast();
   const [ticket, setTicket] = useState<TicketDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
+  const [imageZoom, setImageZoom] = useState(1);
+  const [showAllCombos, setShowAllCombos] = useState(false);
+  const [showAllNotifications, setShowAllNotifications] = useState(false);
+  const [isRawExpanded, setIsRawExpanded] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -94,15 +101,62 @@ export default function TicketDetailScreen() {
     month: 'long',
     year: 'numeric',
   });
+  const drawDateShort = new Date(ticket.draw_date).toLocaleDateString('en-SG', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+  const uploadedAt = new Date(ticket.purchase_datetime).toLocaleString('en-SG');
+  const statusText = ticket.status === 'WON'
+    ? 'Won'
+    : ticket.status === 'LOST'
+      ? 'No Prize'
+      : 'Pending';
+  const imageUri = ticket.image_url ? getApiBaseUrl() + ticket.image_url : null;
+  const rawCollapsedLines = 8;
+  const comboPreviewLimit = 12;
+  const notificationPreviewLimit = 4;
+  const visibleCombos = showAllCombos
+    ? ticket.toto_expanded_combinations
+    : ticket.toto_expanded_combinations.slice(0, comboPreviewLimit);
+  const visibleNotifications = showAllNotifications
+    ? ticket.notifications
+    : ticket.notifications.slice(0, notificationPreviewLimit);
+  const rawText = ticket.raw_ocr_text ?? '';
+  const explicitLineCount = rawText ? rawText.split(/\r?\n/).length : 0;
+  const estimatedWrappedLines = rawText ? Math.ceil(rawText.length / 72) : 0;
+  const estimatedLineCount = Math.max(explicitLineCount, estimatedWrappedLines);
+  const canToggleRawText = estimatedLineCount > rawCollapsedLines;
+
+  function zoomIn() {
+    setImageZoom((prev) => Math.min(prev + 0.5, 3));
+  }
+
+  function zoomOut() {
+    setImageZoom((prev) => Math.max(prev - 0.5, 1));
+  }
+
+  function resetZoom() {
+    setImageZoom(1);
+  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {ticket.image_url && (
-        <Image
-          source={{ uri: getApiBaseUrl() + ticket.image_url }}
-          style={styles.ticketImage}
-          resizeMode="contain"
-        />
+      {imageUri && (
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={() => {
+            resetZoom();
+            setIsImageViewerOpen(true);
+          }}
+        >
+          <Image
+            source={{ uri: imageUri }}
+            style={styles.ticketImage}
+            resizeMode="contain"
+          />
+          <Text style={styles.zoomHint}>Tap image to zoom</Text>
+        </TouchableOpacity>
       )}
 
       <View style={styles.infoCard}>
@@ -115,19 +169,32 @@ export default function TicketDetailScreen() {
           <StatusBadge status={ticket.status} />
         </View>
 
+        {ticket.prize_tier && (
+          <View style={styles.prizeStrip}>
+            <Text style={styles.prizeStripText}>{`Prize Tier: ${ticket.prize_tier}`}</Text>
+          </View>
+        )}
+
+        <View style={styles.metricGrid}>
+          <MetricTile label="Draw Date" value={drawDateShort} />
+          <MetricTile label="Uploaded" value={uploadedAt} />
+          <MetricTile label="Total Price" value={`$${ticket.total_price}`} />
+          <MetricTile label="Draw No." value={ticket.draw_number ?? 'N/A'} />
+        </View>
+
         <View style={styles.infoGrid}>
-          <InfoField label="Draw Date" value={drawDate} />
+          <InfoField label="Full Draw Date" value={drawDate} />
           {ticket.bet_label && <InfoField label="Bet Type" value={ticket.bet_label} />}
-          <InfoField label="Total Price" value={`$${ticket.total_price}`} />
-          <InfoField
-            label="Uploaded"
-            value={new Date(ticket.purchase_datetime).toLocaleString('en-SG')}
-          />
+          <InfoField label="Ticket Status" value={statusText} />
         </View>
       </View>
 
       {ticket.four_d_ticket && (
         <Section title="4D Details">
+          <View style={styles.keyNumberCard}>
+            <Text style={styles.keyNumberLabel}>Ticket Number</Text>
+            <Text style={styles.keyNumberValue}>{ticket.four_d_ticket.number}</Text>
+          </View>
           <InfoField label="Number" value={ticket.four_d_ticket.number} />
           <InfoField label="Bet" value={ticket.four_d_ticket.bet_type} />
           <InfoField label="Big" value={`$${ticket.four_d_ticket.big_amount}`} />
@@ -152,20 +219,27 @@ export default function TicketDetailScreen() {
 
       {ticket.toto_expanded_combinations.length > 0 && (
         <Section title={`Expanded Combinations (${ticket.toto_expanded_combinations.length})`}>
-          {ticket.toto_expanded_combinations.slice(0, 30).map((c) => (
+          {visibleCombos.map((c) => (
             <Text key={c} style={styles.comboText}>{c}</Text>
           ))}
-          {ticket.toto_expanded_combinations.length > 30 && (
-            <Text style={styles.moreText}>
-              ...and {ticket.toto_expanded_combinations.length - 30} more
-            </Text>
+          {ticket.toto_expanded_combinations.length > comboPreviewLimit && (
+            <TouchableOpacity
+              style={styles.inlineAction}
+              onPress={() => setShowAllCombos((prev) => !prev)}
+            >
+              <Text style={styles.inlineActionText}>
+                {showAllCombos
+                  ? 'Show less combinations'
+                  : `Show all ${ticket.toto_expanded_combinations.length} combinations`}
+              </Text>
+            </TouchableOpacity>
           )}
         </Section>
       )}
 
       {ticket.notifications.length > 0 && (
         <Section title="Notifications">
-          {ticket.notifications.map((n) => (
+          {visibleNotifications.map((n) => (
             <View key={n.id} style={styles.notificationRow}>
               <Text style={styles.notificationText}>{n.message}</Text>
               <Text style={styles.notificationDate}>
@@ -173,18 +247,78 @@ export default function TicketDetailScreen() {
               </Text>
             </View>
           ))}
+          {ticket.notifications.length > notificationPreviewLimit && (
+            <TouchableOpacity
+              style={styles.inlineAction}
+              onPress={() => setShowAllNotifications((prev) => !prev)}
+            >
+              <Text style={styles.inlineActionText}>
+                {showAllNotifications
+                  ? 'Show fewer notifications'
+                  : `Show all ${ticket.notifications.length} notifications`}
+              </Text>
+            </TouchableOpacity>
+          )}
         </Section>
       )}
 
       {ticket.raw_ocr_text && (
         <Section title="Raw OCR Text">
-          <Text style={styles.ocrText}>{ticket.raw_ocr_text}</Text>
+          <Text style={styles.ocrText} numberOfLines={isRawExpanded ? undefined : rawCollapsedLines}>
+            {ticket.raw_ocr_text}
+          </Text>
+          {canToggleRawText && (
+            <TouchableOpacity
+              style={styles.inlineAction}
+              onPress={() => setIsRawExpanded((prev) => !prev)}
+            >
+              <Text style={styles.inlineActionText}>
+                {isRawExpanded ? 'Show less OCR text' : 'Show full OCR text'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </Section>
       )}
 
       <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
         <Text style={styles.deleteBtnText}>Delete Ticket</Text>
       </TouchableOpacity>
+
+      {imageUri && (
+        <Modal
+          animationType="fade"
+          visible={isImageViewerOpen}
+          transparent
+          onRequestClose={() => setIsImageViewerOpen(false)}
+        >
+          <View style={styles.viewerBackdrop}>
+            <View style={styles.viewerTopRow}>
+              <TouchableOpacity style={styles.viewerCloseBtn} onPress={() => setIsImageViewerOpen(false)}>
+                <Text style={styles.viewerCloseText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+            <Pressable style={styles.viewerImageWrap} onPress={() => setIsImageViewerOpen(false)}>
+              <Image
+                source={{ uri: imageUri }}
+                style={[styles.viewerImage, { transform: [{ scale: imageZoom }] }]}
+                resizeMode="contain"
+              />
+            </Pressable>
+            <View style={styles.viewerControls}>
+              <TouchableOpacity style={styles.viewerControlBtn} onPress={zoomOut}>
+                <Text style={styles.viewerControlText}>-</Text>
+              </TouchableOpacity>
+              <Text style={styles.viewerZoomText}>{`${imageZoom.toFixed(1)}x`}</Text>
+              <TouchableOpacity style={styles.viewerControlBtn} onPress={zoomIn}>
+                <Text style={styles.viewerControlText}>+</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.viewerResetBtn} onPress={resetZoom}>
+                <Text style={styles.viewerResetText}>Reset</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
     </ScrollView>
   );
 }
@@ -207,6 +341,15 @@ function InfoField({ label, value }: { label: string; value: string }) {
   );
 }
 
+function MetricTile({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.metricTile}>
+      <Text style={styles.metricLabel}>{label}</Text>
+      <Text style={styles.metricValue}>{value}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   content: { padding: Spacing.md, paddingBottom: Spacing.xl },
@@ -216,6 +359,13 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     backgroundColor: Colors.surfaceAlt,
     marginBottom: Spacing.md,
+  },
+  zoomHint: {
+    marginTop: -8,
+    marginBottom: Spacing.md,
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    textAlign: 'right',
   },
   ocrText: {
     fontSize: Typography.xs,
@@ -237,12 +387,49 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     marginBottom: Spacing.md,
+    gap: Spacing.sm,
   },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: Spacing.sm,
-    marginBottom: Spacing.md,
+  },
+  prizeStrip: {
+    backgroundColor: Colors.winBg,
+    borderRadius: Radius.sm,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  prizeStripText: {
+    color: Colors.win,
+    fontSize: Typography.sm,
+    fontWeight: '700',
+  },
+  metricGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
+  },
+  metricTile: {
+    width: '48.8%',
+    backgroundColor: Colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 4,
+  },
+  metricLabel: {
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+  },
+  metricValue: {
+    fontSize: Typography.sm,
+    color: Colors.text,
+    fontWeight: '700',
   },
   gameTag: {
     paddingHorizontal: 12,
@@ -256,13 +443,22 @@ const styles = StyleSheet.create({
     borderRadius: Radius.full,
   },
   statusBadgeText: { fontSize: Typography.sm, fontWeight: '700' },
-  infoGrid: { gap: Spacing.xs },
+  infoGrid: {
+    gap: Spacing.xs,
+    marginTop: 2,
+  },
   infoField: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 4,
+    alignItems: 'flex-start',
+    paddingVertical: 6,
   },
-  infoLabel: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: '600' },
+  infoLabel: {
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+    width: 110,
+  },
   infoValue: { fontSize: Typography.sm, color: Colors.text, flex: 1, textAlign: 'right' },
   section: {
     backgroundColor: Colors.surface,
@@ -284,6 +480,27 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: Spacing.xs,
     marginBottom: Spacing.xs,
+  },
+  keyNumberCard: {
+    backgroundColor: Colors.infoBg,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: Colors.info,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: Spacing.sm,
+  },
+  keyNumberLabel: {
+    fontSize: Typography.xs,
+    color: Colors.info,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  keyNumberValue: {
+    fontSize: Typography['2xl'],
+    color: Colors.text,
+    fontWeight: '800',
+    letterSpacing: 2,
   },
   numberRow: {
     flexDirection: 'row',
@@ -307,10 +524,19 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     paddingVertical: 3,
   },
-  moreText: {
-    fontSize: Typography.xs,
-    color: Colors.textSecondary,
+  inlineAction: {
+    alignSelf: 'flex-start',
     marginTop: Spacing.sm,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  inlineActionText: {
+    fontSize: Typography.xs,
+    color: Colors.primary,
+    fontWeight: '700',
   },
   notificationRow: {
     paddingVertical: Spacing.xs,
@@ -334,4 +560,77 @@ const styles = StyleSheet.create({
     marginTop: Spacing.md,
   },
   deleteBtnText: { color: '#fff', fontWeight: '700', fontSize: Typography.base },
+  viewerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.95)',
+    paddingTop: 48,
+    paddingBottom: 24,
+    paddingHorizontal: Spacing.md,
+  },
+  viewerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: Spacing.md,
+  },
+  viewerCloseBtn: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+    borderRadius: Radius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  viewerCloseText: {
+    color: '#fff',
+    fontSize: Typography.sm,
+    fontWeight: '700',
+  },
+  viewerImageWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  viewerImage: {
+    width: '100%',
+    height: '85%',
+  },
+  viewerControls: {
+    marginTop: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+  },
+  viewerControlBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: Radius.full,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewerControlText: {
+    color: '#fff',
+    fontSize: Typography.lg,
+    fontWeight: '700',
+  },
+  viewerZoomText: {
+    color: '#fff',
+    fontSize: Typography.sm,
+    fontWeight: '700',
+    minWidth: 46,
+    textAlign: 'center',
+  },
+  viewerResetBtn: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+    borderRadius: Radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  viewerResetText: {
+    color: '#fff',
+    fontSize: Typography.sm,
+    fontWeight: '700',
+  },
 });

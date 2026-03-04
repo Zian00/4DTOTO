@@ -103,6 +103,7 @@ class TicketDetail(BaseModel):
     created_at: datetime
     updated_at: datetime
     bet_label: str | None = None
+    prize_tier: str | None = None
     numbers: list[str] = Field(default_factory=list)
     four_d_ticket: FourDTicketOut | None = None
     toto_ticket: TotoTicketOut | None = None

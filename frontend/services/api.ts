@@ -150,6 +150,7 @@ export interface TicketDetail {
   created_at: string;
   updated_at: string;
   bet_label: string | null;
+  prize_tier: string | null;
   numbers: string[];
   four_d_ticket: FourDTicketOut | null;
   toto_ticket: TotoTicketOut | null;

@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from itertools import combinations
 from typing import Any
 
+from services.scheduler import remove_poll
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -315,6 +316,7 @@ async def get_ticket(ticket_id: str, db: AsyncSession = Depends(get_db)):
         await db.refresh(ticket)
 
     bet_label, number_strings = _ticket_display_data(ticket)
+    prize_tier = _extract_prize_tier(ticket.notifications)
     return TicketDetail(
         id=ticket.id,
         purchase_group_id=ticket.purchase_group_id,
@@ -327,6 +329,7 @@ async def get_ticket(ticket_id: str, db: AsyncSession = Depends(get_db)):
         created_at=ticket.created_at,
         updated_at=ticket.updated_at,
         bet_label=bet_label,
+        prize_tier=prize_tier,
         numbers=number_strings,
         four_d_ticket=ticket.four_d_ticket,
         toto_ticket=ticket.toto_ticket,
@@ -343,11 +346,11 @@ async def delete_ticket(ticket_id: str, db: AsyncSession = Depends(get_db)):
     ticket = await _load_ticket(ticket_id, db)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    stmt = select(Ticket).where(Ticket.purchase_group_id == ticket.purchase_group_id)
-    group_rows = (await db.execute(stmt)).scalars().all()
-    for row in group_rows:
-        await db.delete(row)
+
+    # Deleting by id should remove only this ticket row.
+    await db.delete(ticket)
     await db.commit()
+    remove_poll(str(ticket.id))
 
 
 async def _load_ticket(ticket_id: str, db: AsyncSession) -> Ticket | None:
