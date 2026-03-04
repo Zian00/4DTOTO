@@ -48,70 +48,62 @@
 
 ---
 
-## Phase 4 — Minor Frontend & API Fixes
-> Small gaps that are individually quick to fix.
-
-- [ ] 4.1 Send `X-Device-ID` header in all API calls (`frontend/services/api.ts` — call `getDeviceId()` and attach header)
-- [ ] 4.2 Read `X-Device-ID` header in backend to associate tickets with device (optional but consistent)
-
----
-
-## Phase 5 — Automated Tests
+## Phase 4 — Automated Tests
 > `backend/tests/` is completely empty. Code quality is an evaluation criterion.
 
-- [ ] 5.1 Set up pytest + `httpx` async test client in `backend/tests/`
-- [ ] 5.2 Test ticket upload endpoint (mock OCR, check response shape)
-- [ ] 5.3 Test ticket confirm endpoint (4D and TOTO paths)
-- [ ] 5.4 Test 4D win/loss checker logic (`services/checker.py`)
-- [ ] 5.5 Test TOTO win/loss checker logic including system bet expansion
-- [ ] 5.6 Test results retrieval endpoint (cached and uncached)
-- [ ] 5.7 Test all 3 prediction endpoints
+- [ ] 4.1 Set up pytest + `httpx` async test client in `backend/tests/`
+- [ ] 4.2 Test ticket upload endpoint (mock OCR, check response shape)
+- [ ] 4.3 Test ticket confirm endpoint (4D and TOTO paths)
+- [ ] 4.4 Test 4D win/loss checker logic (`services/checker.py`)
+- [ ] 4.5 Test TOTO win/loss checker logic including system bet expansion
+- [ ] 4.6 Test results retrieval endpoint (cached and uncached)
+- [ ] 4.7 Test all 3 prediction endpoints
 
 ---
 
-## Phase 6 — Deployment Config
+## Phase 5 — Deployment Config
 > No Dockerfile or docker-compose exists. A deployable build is a required deliverable.
 
-- [ ] 6.1 Write `backend/Dockerfile`
-- [ ] 6.2 Write `docker-compose.yml` at root (backend + PostgreSQL + optional frontend)
-- [ ] 6.3 Add `.env.example` file with all required environment variables documented
-- [ ] 6.4 Verify `expo export --platform web` produces a working static web build
-- [ ] 6.5 Add build/run commands to README
+- [ ] 5.1 Write `backend/Dockerfile`
+- [ ] 5.2 Write `docker-compose.yml` at root (backend + PostgreSQL + optional frontend)
+- [ ] 5.3 Add `.env.example` file with all required environment variables documented
+- [ ] 5.4 Verify `expo export --platform web` produces a working static web build
+- [ ] 5.5 Add build/run commands to README
 
 ---
 
-## Phase 7 — README
+## Phase 6 — README
 > Current README.md is just `# 4DTOTO`. This is a required deliverable.
 
-- [ ] 7.1 Quick-start guide (clone → install → run in <5 minutes)
-- [ ] 7.2 Architecture overview (diagram or description: Frontend ↔ API ↔ DB ↔ Scraper ↔ Gemini)
-- [ ] 7.3 All API endpoints documented (method, path, params, response)
-- [ ] 7.4 Data source citations (Singapore Pools URLs used for scraping)
-- [ ] 7.5 Ethics statement (no gambling use, predictions are educational only)
-- [ ] 7.6 Tech stack list with versions
+- [ ] 6.1 Quick-start guide (clone → install → run in <5 minutes)
+- [ ] 6.2 Architecture overview (diagram or description: Frontend ↔ API ↔ DB ↔ Scraper ↔ Gemini)
+- [ ] 6.3 All API endpoints documented (method, path, params, response)
+- [ ] 6.4 Data source citations (Singapore Pools URLs used for scraping)
+- [ ] 6.5 Ethics statement (no gambling use, predictions are educational only)
+- [ ] 6.6 Tech stack list with versions
 
 ---
 
-## Phase 8 — User Manual
+## Phase 7 — User Manual
 > PDF says *"We will assess the User Manual heavily"*. This is the highest-weight doc deliverable.
 
-- [ ] 8.1 Create `USER_MANUAL.md` (or PDF)
-- [ ] 8.2 Prerequisites — what to install (Node, Python, PostgreSQL, Expo CLI, etc.)
-- [ ] 8.3 Full installation & setup instructions (backend + frontend, step by step)
-- [ ] 8.4 Environment configuration (.env variables explained)
-- [ ] 8.5 How to run the Web app
-- [ ] 8.6 How to run the Mobile app (Expo Go or build)
-- [ ] 8.7 Step-by-step usage walkthrough with screenshots:
-  - [ ] 8.7a Upload a ticket
-  - [ ] 8.7b Review and confirm OCR results
-  - [ ] 8.7c Check ticket history
-  - [ ] 8.7d View draw results
-  - [ ] 8.7e Use prediction page
-- [ ] 8.8 How to test each feature manually
-- [ ] 8.9 Troubleshooting common issues
-- [ ] 8.10 Known issues / limitations
-- [ ] 8.11 Predictive analysis usage guide (what the 3 models mean, how to read output)
-- [ ] 8.12 Data privacy & security considerations
+- [ ] 7.1 Create `USER_MANUAL.md` (or PDF)
+- [ ] 7.2 Prerequisites — what to install (Node, Python, PostgreSQL, Expo CLI, etc.)
+- [ ] 7.3 Full installation & setup instructions (backend + frontend, step by step)
+- [ ] 7.4 Environment configuration (.env variables explained)
+- [ ] 7.5 How to run the Web app
+- [ ] 7.6 How to run the Mobile app (Expo Go or build)
+- [ ] 7.7 Step-by-step usage walkthrough with screenshots:
+  - [ ] 7.7a Upload a ticket
+  - [ ] 7.7b Review and confirm OCR results
+  - [ ] 7.7c Check ticket history
+  - [ ] 7.7d View draw results
+  - [ ] 7.7e Use prediction page
+- [ ] 7.8 How to test each feature manually
+- [ ] 7.9 Troubleshooting common issues
+- [ ] 7.10 Known issues / limitations
+- [ ] 7.11 Predictive analysis usage guide (what the 3 models mean, how to read output)
+- [ ] 7.12 Data privacy & security considerations
 
 ---
 
@@ -134,3 +126,5 @@
 - [ ] Accessibility improvements
 - [ ] Multi-language support
 - [ ] Demo video
+
+
