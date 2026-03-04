@@ -11,8 +11,10 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import Toast from 'react-native-toast-message';
+
 import { Colors, Radius, Spacing, Typography } from '../../constants/theme';
-import { useToast } from '../../hooks/useToast';
+import { useIsWide } from '../../hooks/useIsWide';
 import { listTickets, type TicketListItem } from '../../services/api';
 
 const NOTIFIED_KEY = '@fourdtoto/notified_tickets';
@@ -123,7 +125,6 @@ function TicketCard({ item, onPress }: { item: TicketListItem; onPress: () => vo
 
 export default function HistoryScreen() {
   const router = useRouter();
-  const { showToast } = useToast();
   const [tickets, setTickets] = useState<TicketListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState<Sort>('newest');
@@ -140,7 +141,7 @@ export default function HistoryScreen() {
       setTickets(sorted);
       await checkForNewResults(sorted);
     } catch {
-      showToast('Could not load tickets', 'error');
+      Toast.show({ type: 'error', text1: 'Could not load tickets' });
     } finally {
       setLoading(false);
     }
@@ -152,14 +153,14 @@ export default function HistoryScreen() {
     const newWins = items.filter((t) => t.status === 'WON' && !notifiedIds.includes(t.id));
     const newLosses = items.filter((t) => t.status === 'LOST' && !notifiedIds.includes(t.id));
     for (const t of newWins) {
-      showToast(
-        `You won${t.prize_tier ? ` (${t.prize_tier})` : ''} on your ${t.game_type} ticket`,
-        'win',
-      );
+      Toast.show({
+        type: 'success',
+        text1: `You won${t.prize_tier ? ` (${t.prize_tier})` : ''} on your ${t.game_type} ticket`,
+      });
       notifiedIds.push(t.id);
     }
     if (newWins.length === 0 && newLosses.length > 0) {
-      showToast(`${newLosses.length} ticket(s) resolved with no prize.`, 'loss');
+      Toast.show({ type: 'info', text1: `${newLosses.length} ticket(s) resolved with no prize.` });
       newLosses.forEach((t) => notifiedIds.push(t.id));
     }
     if (newWins.length > 0 || newLosses.length > 0) {
@@ -173,6 +174,7 @@ export default function HistoryScreen() {
     }, [sort, filter]),
   );
 
+  const isWide = useIsWide();
   const pendingCount = tickets.filter((t) => t.status === 'PENDING').length;
   const wonCount = tickets.filter((t) => t.status === 'WON').length;
 
@@ -247,12 +249,17 @@ export default function HistoryScreen() {
         </View>
       ) : (
         <FlatList
+          key={isWide ? 'wide' : 'narrow'}
           data={tickets}
           keyExtractor={(item) => item.id}
+          numColumns={isWide ? 2 : 1}
           renderItem={({ item }) => (
-            <TicketCard item={item} onPress={() => router.push(`/ticket/${item.id}`)} />
+            <View style={isWide ? styles.wideCardWrap : null}>
+              <TicketCard item={item} onPress={() => router.push(`/ticket/${item.id}`)} />
+            </View>
           )}
-          contentContainerStyle={styles.list}
+          columnWrapperStyle={isWide ? styles.columnWrapper : undefined}
+          contentContainerStyle={[styles.list, isWide && styles.listWide]}
           showsVerticalScrollIndicator={false}
           onRefresh={() => loadTickets()}
           refreshing={loading}
@@ -461,4 +468,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
   },
+
+  /* Web wide layout */
+  listWide: { paddingHorizontal: Spacing.md },
+  columnWrapper: { gap: Spacing.sm, marginBottom: Spacing.sm },
+  wideCardWrap: { flex: 1 },
 });

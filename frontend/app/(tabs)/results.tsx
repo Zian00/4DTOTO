@@ -9,8 +9,10 @@ import {
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 
+import Toast from 'react-native-toast-message';
+
 import { Colors, Radius, Spacing, Typography } from '../../constants/theme';
-import { useToast } from '../../hooks/useToast';
+import { useIsWide } from '../../hooks/useIsWide';
 import { listResults, type DrawResultResponse } from '../../services/api';
 
 const GAME_TYPES = ['4D', 'TOTO'] as const;
@@ -171,7 +173,7 @@ function TotoCard({ result, isLatest }: { result: DrawResultResponse; isLatest?:
 }
 
 export default function ResultsScreen() {
-  const { showToast } = useToast();
+  const isWide = useIsWide();
   const [gameType, setGameType] = useState<GameType>('4D');
   const [results, setResults] = useState<DrawResultResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -191,7 +193,7 @@ export default function ResultsScreen() {
         setResults(data.items);
       }
     } catch {
-      showToast('Could not load results', 'error');
+      Toast.show({ type: 'error', text1: 'Could not load results' });
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -251,14 +253,19 @@ export default function ResultsScreen() {
         </View>
       ) : (
         <FlatList
+          key={isWide ? 'wide' : 'narrow'}
           data={results}
           keyExtractor={(item) => item.id}
-          renderItem={({ item, index }) =>
-            gameType === '4D'
-              ? <FourDCard result={item} isLatest={index === 0} />
-              : <TotoCard result={item} isLatest={index === 0} />
-          }
-          contentContainerStyle={styles.list}
+          numColumns={isWide ? 2 : 1}
+          renderItem={({ item, index }) => (
+            <View style={isWide ? styles.wideCardWrap : null}>
+              {gameType === '4D'
+                ? <FourDCard result={item} isLatest={index === 0} />
+                : <TotoCard result={item} isLatest={index === 0} />}
+            </View>
+          )}
+          columnWrapperStyle={isWide ? styles.columnWrapper : undefined}
+          contentContainerStyle={[styles.list, isWide && styles.listWide]}
           showsVerticalScrollIndicator={false}
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.2}
@@ -578,4 +585,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
+
+  /* Web wide */
+  listWide: { paddingHorizontal: Spacing.md },
+  columnWrapper: { gap: Spacing.md, marginBottom: Spacing.md },
+  wideCardWrap: { flex: 1 },
 });

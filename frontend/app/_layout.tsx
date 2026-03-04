@@ -8,14 +8,12 @@ import {
   View,
 } from 'react-native';
 import { Stack } from 'expo-router';
+import Toast from 'react-native-toast-message';
 
-import { ToastContainer, useToastState } from '../components/Toast';
-import { ToastContext } from '../hooks/useToast';
 import { Colors, Spacing, Typography, Radius } from '../constants/theme';
 import { getNickname, setNickname } from '../utils/deviceId';
 
 export default function RootLayout() {
-  const { toast, showToast, fadeAnim } = useToastState();
   const [showWelcome, setShowWelcome] = useState(false);
   const [nameInput, setNameInput] = useState('');
   const inputRef = useRef<TextInput>(null);
@@ -37,7 +35,7 @@ export default function RootLayout() {
   }
 
   return (
-    <ToastContext.Provider value={{ showToast }}>
+    <>
       <Stack
         screenOptions={{
           statusBarStyle: 'light',
@@ -55,7 +53,7 @@ export default function RootLayout() {
         />
       </Stack>
 
-      <ToastContainer toast={toast} fadeAnim={fadeAnim} />
+      <Toast />
 
       {/* First-launch welcome overlay — using View instead of Modal to avoid
           New Architecture (Fabric) boolean prop casting crash on Android */}
@@ -92,7 +90,7 @@ export default function RootLayout() {
           </View>
         </View>
       )}
-    </ToastContext.Provider>
+    </>
   );
 }
 

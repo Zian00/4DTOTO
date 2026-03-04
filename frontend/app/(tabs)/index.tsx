@@ -17,8 +17,10 @@ import type { DateTimePickerEvent } from '@react-native-community/datetimepicker
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from 'expo-router';
 
+import Toast from 'react-native-toast-message';
+
 import { Colors, Radius, Spacing, Typography } from '../../constants/theme';
-import { useToast } from '../../hooks/useToast';
+import { useIsWide } from '../../hooks/useIsWide';
 import {
   confirmTicket,
   uploadTicket,
@@ -298,7 +300,7 @@ function WarnBadge() {
 }
 
 export default function UploadScreen() {
-  const { showToast } = useToast();
+  const isWide = useIsWide();
   const [nickname, setNickname] = useState('');
   const [selectedUri, setSelectedUri] = useState<string | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>('idle');
@@ -470,12 +472,12 @@ export default function UploadScreen() {
         setUploadMsg('OCR could not detect numbers clearly. Fill in details manually and confirm.');
       }
 
-      showToast('OCR complete. Please review ticket details.', 'info');
+      Toast.show({ type: 'info', text1: 'OCR complete. Please review ticket details.' });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Upload failed';
       setUploadState('error');
       setUploadMsg(msg);
-      showToast('Upload failed. Please try again.', 'error');
+      Toast.show({ type: 'error', text1: 'Upload failed. Please try again.' });
     }
   }
 
@@ -548,7 +550,7 @@ export default function UploadScreen() {
 
     if (Object.keys(nextErrors).length > 0) {
       setFieldErrors(nextErrors);
-      showToast('Please fix highlighted fields before confirming.', 'error');
+      Toast.show({ type: 'error', text1: 'Please fix highlighted fields before confirming.' });
       return;
     }
 
@@ -584,12 +586,12 @@ export default function UploadScreen() {
         + `${response.won_count} won, ${response.lost_count} lost, ${response.pending_count} pending.`
       );
 
-      showToast('Ticket confirmed.', 'info');
+      Toast.show({ type: 'success', text1: 'Ticket confirmed.' });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Confirmation failed';
       setUploadState('error');
       setUploadMsg(msg);
-      showToast('Could not confirm ticket.', 'error');
+      Toast.show({ type: 'error', text1: 'Could not confirm ticket.' });
     }
   }
 
@@ -607,7 +609,7 @@ export default function UploadScreen() {
     const dateStr = `${dd}/${mm}/${yyyy}`;
     if (Platform.OS === 'ios') setShowDatePicker(false);
     if (draft?.drawDateOptions.includes(dateStr)) {
-      showToast(`${dateStr} is already in the list.`, 'info');
+      Toast.show({ type: 'info', text1: `${dateStr} is already in the list.` });
       return;
     }
     markFieldTouched('drawDates');
@@ -687,7 +689,7 @@ export default function UploadScreen() {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, isWide && styles.contentWide]}
       keyboardShouldPersistTaps="handled"
     >
       {/* Greeting */}
@@ -1161,6 +1163,7 @@ export default function UploadScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   content: { padding: Spacing.md, paddingBottom: Spacing.xl },
+  contentWide: { maxWidth: 720, alignSelf: 'center', width: '100%' },
   header: { marginBottom: Spacing.lg },
   greeting: {
     fontSize: Typography.xl,

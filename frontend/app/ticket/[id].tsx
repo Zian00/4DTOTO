@@ -13,8 +13,9 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
+import Toast from 'react-native-toast-message';
+
 import { Colors, Radius, Spacing, Typography } from '../../constants/theme';
-import { useToast } from '../../hooks/useToast';
 import { deleteTicket, getApiBaseUrl, getTicket, type TicketDetail } from '../../services/api';
 
 function StatusBadge({ status }: { status: 'PENDING' | 'WON' | 'LOST' }) {
@@ -42,7 +43,6 @@ function StatusBadge({ status }: { status: 'PENDING' | 'WON' | 'LOST' }) {
 export default function TicketDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { showToast } = useToast();
   const [ticket, setTicket] = useState<TicketDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
@@ -55,7 +55,7 @@ export default function TicketDetailScreen() {
     if (!id) return;
     getTicket(id)
       .then(setTicket)
-      .catch(() => showToast('Could not load ticket', 'error'))
+      .catch(() => Toast.show({ type: 'error', text1: 'Could not load ticket' }))
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -69,10 +69,10 @@ export default function TicketDetailScreen() {
         onPress: async () => {
           try {
             await deleteTicket(ticket.id);
-            showToast('Ticket deleted', 'info');
+            Toast.show({ type: 'info', text1: 'Ticket deleted' });
             router.back();
           } catch {
-            showToast('Could not delete ticket', 'error');
+            Toast.show({ type: 'error', text1: 'Could not delete ticket' });
           }
         },
       },

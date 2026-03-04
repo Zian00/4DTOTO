@@ -9,8 +9,10 @@ import {
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 
+import Toast from 'react-native-toast-message';
+
 import { Colors, Radius, Spacing, Typography } from '../../constants/theme';
-import { useToast } from '../../hooks/useToast';
+import { useIsWide } from '../../hooks/useIsWide';
 import { getPredictions, type PredictionResponse } from '../../services/api';
 
 const MODEL_COLORS = ['#5b6af0', '#c0392b', '#16a085'] as const;
@@ -120,7 +122,7 @@ function ModelCard({
 }
 
 export default function PredictScreen() {
-  const { showToast } = useToast();
+  const isWide = useIsWide();
   const [predictions, setPredictions] = useState<PredictionResponse[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -130,7 +132,7 @@ export default function PredictScreen() {
       const data = await getPredictions();
       setPredictions(data);
     } catch {
-      showToast('Could not load predictions', 'error');
+      Toast.show({ type: 'error', text1: 'Could not load predictions' });
     } finally {
       setLoading(false);
     }
@@ -175,9 +177,13 @@ export default function PredictScreen() {
         </Text>
       </View>
 
-      {predictions.map((p, i) => (
-        <ModelCard key={p.model} prediction={p} modelIndex={i} />
-      ))}
+      <View style={isWide ? styles.cardsGrid : null}>
+        {predictions.map((p, i) => (
+          <View key={p.model} style={isWide ? styles.gridItem : null}>
+            <ModelCard prediction={p} modelIndex={i} />
+          </View>
+        ))}
+      </View>
 
       {/* Disclaimer */}
       <View style={styles.disclaimer}>
@@ -441,5 +447,16 @@ const styles = StyleSheet.create({
     fontSize: Typography.sm,
     color: Colors.text,
     lineHeight: 22,
+  },
+
+  /* Web wide */
+  cardsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.md,
+  },
+  gridItem: {
+    flex: 1,
+    minWidth: 300,
   },
 });
