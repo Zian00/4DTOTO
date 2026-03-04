@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,6 +12,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import type { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from 'expo-router';
 
@@ -27,7 +31,6 @@ type GameType = '4D' | 'TOTO';
 
 type OcrDraft = {
   gameType: GameType;
-  drawDatesText: string;
   drawDateOptions: string[];
   drawNumbersText: string;
   drawNumberOptions: string[];
@@ -149,19 +152,6 @@ function parseNumbersForSubmit(text: string, gameType: GameType): string[][] {
   return output;
 }
 
-function parseDrawDatesForSubmit(text: string): string[] {
-  const tokens = text
-    .split(/[\n,]/)
-    .map((v) => v.trim())
-    .filter(Boolean);
-  const out: string[] = [];
-  for (const token of tokens) {
-    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(token)) continue;
-    if (!out.includes(token)) out.push(token);
-  }
-  return out;
-}
-
 function parseDrawNumbersForSubmit(text: string): string[] {
   const tokens = text
     .split(/[\n,]/)
@@ -176,13 +166,6 @@ function parseDrawNumbersForSubmit(text: string): string[] {
   return out;
 }
 
-function toggleDrawDateInText(text: string, value: string): string {
-  const current = parseDrawDatesForSubmit(text);
-  const exists = current.includes(value);
-  const next = exists ? current.filter((d) => d !== value) : [...current, value];
-  return next.join('\n');
-}
-
 function toggleDrawNumberInText(text: string, value: string): string {
   const current = parseDrawNumbersForSubmit(text);
   const exists = current.includes(value);
@@ -190,13 +173,12 @@ function toggleDrawNumberInText(text: string, value: string): string {
   return next.join('\n');
 }
 
-function buildDateDrawPairs(drawDatesText: string, drawNumbersText: string): Array<{
+function buildDateDrawPairs(drawDateOptions: string[], drawNumbersText: string): Array<{
   drawDate: string;
   drawNumber: string;
 }> {
-  const drawDates = parseDrawDatesForSubmit(drawDatesText);
   const drawNumbers = parseDrawNumbersForSubmit(drawNumbersText);
-  return drawDates.map((drawDate, idx) => ({
+  return drawDateOptions.map((drawDate, idx) => ({
     drawDate,
     drawNumber: drawNumbers[idx] ?? '',
   }));
@@ -233,7 +215,6 @@ function toDraft(response: TicketPreviewResponse): OcrDraft {
   );
   return {
     gameType,
-    drawDatesText: drawDates.join('\n'),
     drawDateOptions: drawDates,
     drawNumbersText: drawNumbers.join('\n'),
     drawNumberOptions: drawNumbers,
@@ -255,8 +236,10 @@ export default function UploadScreen() {
   const [uploadMsg, setUploadMsg] = useState('');
   const [draft, setDraft] = useState<OcrDraft | null>(null);
   const mappingPairs = draft
-    ? buildDateDrawPairs(draft.drawDatesText, draft.drawNumbersText)
+    ? buildDateDrawPairs(draft.drawDateOptions, draft.drawNumbersText)
     : [];
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [pickerValue, setPickerValue] = useState(new Date());
 
 
   useFocusEffect(
@@ -336,9 +319,9 @@ export default function UploadScreen() {
   async function handleConfirm() {
     if (!draft || !selectedUri) return;
 
-    const drawDates = parseDrawDatesForSubmit(draft.drawDatesText);
+    const drawDates = draft.drawDateOptions;
     if (drawDates.length === 0) {
-      Alert.alert('Invalid draw dates', 'Enter at least one draw date in DD/MM/YYYY format.');
+      Alert.alert('Missing draw dates', 'Add at least one draw date.');
       return;
     }
     const drawNumbers = parseDrawNumbersForSubmit(draft.drawNumbersText);
@@ -424,6 +407,26 @@ export default function UploadScreen() {
       setUploadMsg(msg);
       showToast('Could not confirm ticket.', 'error');
     }
+  }
+
+  function openDatePicker() {
+    setPickerValue(new Date());
+    setShowDatePicker(true);
+  }
+
+  function onDateChange(event: DateTimePickerEvent, selected?: Date) {
+    if (Platform.OS === 'android') setShowDatePicker(false);
+    if (event.type === 'dismissed' || !selected) return;
+    const dd = String(selected.getDate()).padStart(2, '0');
+    const mm = String(selected.getMonth() + 1).padStart(2, '0');
+    const yyyy = String(selected.getFullYear());
+    const dateStr = `${dd}/${mm}/${yyyy}`;
+    setDraft((prev) => {
+      if (!prev) return prev;
+      if (prev.drawDateOptions.includes(dateStr)) return prev;
+      return { ...prev, drawDateOptions: [...prev.drawDateOptions, dateStr] };
+    });
+    if (Platform.OS === 'ios') setShowDatePicker(false);
   }
 
   function reset() {
@@ -570,43 +573,62 @@ export default function UploadScreen() {
           )}
 
           {/* 4. Draw Dates */}
-          <Text style={styles.inputLabel}>Draw Dates (DD/MM/YYYY, one per line)</Text>
-          <TextInput
-            style={[styles.input, styles.drawDatesInput]}
-            value={draft.drawDatesText}
-            onChangeText={(text) => setDraft((prev) => (prev ? { ...prev, drawDatesText: text } : prev))}
-            autoCapitalize="none"
-            multiline
-            placeholder="03/03/2026\n04/03/2026"
-            placeholderTextColor={Colors.textSecondary}
-          />
-          {draft.drawDateOptions.length > 1 && (
-            <View style={styles.dateOptionsRow}>
-              {draft.drawDateOptions.map((opt) => (
+          <Text style={styles.inputLabel}>Draw Dates</Text>
+          <View style={styles.dateChipsContainer}>
+            {draft.drawDateOptions.map((opt) => (
+              <View key={opt} style={styles.dateChip}>
+                <Text style={styles.dateChipText}>{opt}</Text>
                 <TouchableOpacity
-                  key={opt}
-                  style={[
-                    styles.dateOptionBtn,
-                    parseDrawDatesForSubmit(draft.drawDatesText).includes(opt)
-                      && styles.dateOptionBtnActive,
-                  ]}
-                  onPress={() => setDraft((prev) => {
-                    if (!prev) return prev;
-                    return { ...prev, drawDatesText: toggleDrawDateInText(prev.drawDatesText, opt) };
-                  })}
+                  onPress={() =>
+                    setDraft((prev) =>
+                      prev
+                        ? { ...prev, drawDateOptions: prev.drawDateOptions.filter((d) => d !== opt) }
+                        : prev,
+                    )
+                  }
+                  hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
                 >
-                  <Text
-                    style={[
-                      styles.dateOptionText,
-                      parseDrawDatesForSubmit(draft.drawDatesText).includes(opt)
-                        && styles.dateOptionTextActive,
-                    ]}
-                  >
-                    {opt}
-                  </Text>
+                  <Text style={styles.dateChipRemove}>×</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
+              </View>
+            ))}
+            <TouchableOpacity style={styles.addDateBtn} onPress={openDatePicker}>
+              <Text style={styles.addDateBtnText}>+ Add Date</Text>
+            </TouchableOpacity>
+          </View>
+          {showDatePicker && Platform.OS === 'ios' && (
+            <Modal transparent animationType="fade">
+              <View style={styles.pickerOverlay}>
+                <View style={styles.pickerBox}>
+                  <DateTimePicker
+                    value={pickerValue}
+                    mode="date"
+                    display="spinner"
+                    onChange={(_, d) => d && setPickerValue(d)}
+                  />
+                  <TouchableOpacity
+                    style={styles.pickerDoneBtn}
+                    onPress={() => onDateChange({ type: 'set', nativeEvent: { timestamp: pickerValue.getTime() } } as DateTimePickerEvent, pickerValue)}
+                  >
+                    <Text style={styles.pickerDoneBtnText}>Done</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.pickerCancelBtn}
+                    onPress={() => setShowDatePicker(false)}
+                  >
+                    <Text style={styles.pickerCancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </Modal>
+          )}
+          {showDatePicker && Platform.OS !== 'ios' && (
+            <DateTimePicker
+              value={pickerValue}
+              mode="date"
+              display="default"
+              onChange={onDateChange}
+            />
           )}
 
           {/* 5. Draw Numbers */}
@@ -877,9 +899,79 @@ const styles = StyleSheet.create({
     color: Colors.text,
     backgroundColor: Colors.surfaceAlt,
   },
-  drawDatesInput: {
-    minHeight: 84,
-    textAlignVertical: 'top',
+  dateChipsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
+    alignItems: 'center',
+  },
+  dateChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    gap: 6,
+  },
+  dateChipText: {
+    fontSize: Typography.sm,
+    color: '#fff',
+    fontWeight: '700',
+  },
+  dateChipRemove: {
+    fontSize: 18,
+    color: 'rgba(255,255,255,0.8)',
+    lineHeight: 20,
+    fontWeight: '400',
+  },
+  addDateBtn: {
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    borderStyle: 'dashed',
+    borderRadius: Radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  addDateBtnText: {
+    fontSize: Typography.sm,
+    color: Colors.primary,
+    fontWeight: '700',
+  },
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  pickerBox: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Radius.lg,
+    borderTopRightRadius: Radius.lg,
+    paddingBottom: 32,
+    paddingTop: 8,
+    paddingHorizontal: Spacing.md,
+  },
+  pickerDoneBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.md,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  pickerDoneBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: Typography.base,
+  },
+  pickerCancelBtn: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  pickerCancelBtnText: {
+    color: Colors.textSecondary,
+    fontWeight: '600',
+    fontSize: Typography.base,
   },
   drawNumbersInput: {
     minHeight: 72,

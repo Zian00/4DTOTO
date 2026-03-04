@@ -10,7 +10,7 @@ Strategy (confirmed via Chrome DevTools network inspection, 2026-03-03):
 import asyncio
 import os
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 import certifi
 import httpx
@@ -376,5 +376,6 @@ async def _cache_result(
         game_type=game_type,
         draw_date=draw_date,
         winning_numbers=winning_numbers,
+        scraped_at=datetime.now(timezone.utc),
     ))
     await db.commit()

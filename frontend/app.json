@@ -19,7 +19,8 @@
           "photosPermission": "Allow 4D/TOTO to access your photos to scan lottery tickets.",
           "cameraPermission": "Allow 4D/TOTO to use your camera to scan lottery tickets."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true
