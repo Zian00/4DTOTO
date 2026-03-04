@@ -55,6 +55,9 @@ async def check_ticket(ticket: Ticket, db: AsyncSession) -> None:
 
     ticket_draw_number = _normalize_draw_number(loaded_ticket.draw_number)
     result_draw_number = _normalize_draw_number(results.get("draw_no"))
+    if not ticket_draw_number and result_draw_number:
+        loaded_ticket.draw_number = result_draw_number
+        ticket_draw_number = result_draw_number
     if ticket_draw_number and result_draw_number and ticket_draw_number != result_draw_number:
         loaded_ticket.status = TicketStatus.LOST
         message = (

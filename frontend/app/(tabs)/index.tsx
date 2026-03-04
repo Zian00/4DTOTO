@@ -32,8 +32,6 @@ type GameType = '4D' | 'TOTO';
 type OcrDraft = {
   gameType: GameType;
   drawDateOptions: string[];
-  drawNumbersText: string;
-  drawNumberOptions: string[];
   purchaseDatetime: string;
   betType: string;
   numbersText: string;
@@ -49,7 +47,6 @@ type ReviewField =
   | 'purchaseDatetime'
   | 'numbersText'
   | 'drawDates'
-  | 'drawNumbersText'
   | 'bigAmount'
   | 'smallAmount';
 
@@ -75,7 +72,6 @@ const EMPTY_DRAFT_CONFIDENCE: DraftConfidence = {
   purchaseDatetime: 'uncertain',
   numbersText: 'uncertain',
   drawDates: 'uncertain',
-  drawNumbersText: 'uncertain',
   bigAmount: 'uncertain',
   smallAmount: 'uncertain',
 };
@@ -228,34 +224,8 @@ function parseNumbersForSubmit(text: string, gameType: GameType): string[][] {
   return output;
 }
 
-function parseDrawNumbersForSubmit(text: string): string[] {
-  const tokens = text
-    .split(/[\n,]/)
-    .map((v) => v.trim())
-    .filter(Boolean);
-  const out: string[] = [];
-  for (const token of tokens) {
-    const match = token.match(/(\d{3,6})(?:\/\d{2,4})?/);
-    if (!match) continue;
-    out.push(match[1]);
-  }
-  return out;
-}
-
 function getBetTypeOptions(gameType: GameType): readonly string[] {
   return gameType === '4D' ? BET_TYPES_4D : BET_TYPES_TOTO;
-}
-
-function buildDateDrawPairs(drawDateOptions: string[], drawNumbersText: string): Array<{
-  drawDate: string;
-  drawNumber: string;
-}> {
-  const drawNumbers = parseDrawNumbersForSubmit(drawNumbersText);
-  const len = Math.max(drawDateOptions.length, drawNumbers.length);
-  return Array.from({ length: len }, (_, idx) => ({
-    drawDate: drawDateOptions[idx] ?? '',
-    drawNumber: drawNumbers[idx] ?? '',
-  }));
 }
 
 function normalizeBetType(gameType: GameType, betTypeRaw: string): string {
@@ -277,8 +247,6 @@ function hasContent(value: string | null | undefined): boolean {
 function buildDraftConfidence(response: TicketPreviewResponse, draft: OcrDraft): DraftConfidence {
   const hasDrawDates = (response.draw_date_options ?? []).some((d) => hasContent(d))
     || hasContent(response.draw_date);
-  const hasDrawNumbers = (response.draw_number_options ?? []).some((d) => hasContent(d))
-    || hasContent(response.draw_number);
 
   return {
     gameType: hasContent(response.game_type) ? 'auto' : 'uncertain',
@@ -286,7 +254,6 @@ function buildDraftConfidence(response: TicketPreviewResponse, draft: OcrDraft):
     purchaseDatetime: hasContent(response.purchase_datetime) ? 'auto' : 'uncertain',
     numbersText: draft.numbersText.trim() ? 'auto' : 'uncertain',
     drawDates: hasDrawDates ? 'auto' : 'uncertain',
-    drawNumbersText: hasDrawNumbers ? 'auto' : 'uncertain',
     bigAmount: hasContent(response.big_amount) ? 'auto' : 'uncertain',
     smallAmount: hasContent(response.small_amount) ? 'auto' : 'uncertain',
   };
@@ -302,21 +269,9 @@ function toDraft(response: TicketPreviewResponse): OcrDraft {
   const uniqueDrawOptions = Array.from(new Set(normalizedOptions.filter(Boolean)));
   const primaryDrawDate = normalizeDateForEditor(response.draw_date);
   const drawDates = uniqueDrawOptions.length > 0 ? uniqueDrawOptions : [primaryDrawDate];
-  const drawNumberOptionsRaw = response.draw_number_options ?? [];
-  const drawNumberPrimary = response.draw_number ? String(response.draw_number).trim() : '';
-  const drawNumbers = Array.from(
-    new Set(
-      [
-        ...drawNumberOptionsRaw.map((v) => String(v).trim()),
-        drawNumberPrimary,
-      ].filter(Boolean),
-    ),
-  );
   return {
     gameType,
     drawDateOptions: drawDates,
-    drawNumbersText: drawNumbers.join('\n'),
-    drawNumberOptions: drawNumbers,
     purchaseDatetime: normalizeDateTimeForEditor(response.purchase_datetime),
     betType: normalizeBetType(gameType, response.bet_type ?? ''),
     numbersText: formatNumbersForEditor(response.numbers, gameType),
@@ -338,13 +293,6 @@ export default function UploadScreen() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [fieldTouched, setFieldTouched] = useState<FieldTouched>({});
   const [isRawExpanded, setIsRawExpanded] = useState(false);
-  const mappingPairs = draft
-    ? buildDateDrawPairs(draft.drawDateOptions, draft.drawNumbersText)
-    : [];
-  const parsedDrawNumbers = useMemo(
-    () => (draft ? parseDrawNumbersForSubmit(draft.drawNumbersText) : []),
-    [draft?.drawNumbersText],
-  );
   const parsedNumberRows = useMemo(
     () => (draft ? parseNumbersForSubmit(draft.numbersText, draft.gameType) : []),
     [draft?.numbersText, draft?.gameType],
@@ -525,11 +473,6 @@ export default function UploadScreen() {
       nextErrors.drawDates = 'Add at least one draw date.';
     }
 
-    const drawNumbers = parseDrawNumbersForSubmit(draft.drawNumbersText);
-    if (drawNumbers.length > drawDates.length) {
-      nextErrors.drawNumbersText = 'Draw numbers cannot exceed the number of draw dates.';
-    }
-
     const purchaseDatetime = draft.purchaseDatetime.trim().toUpperCase();
     if (
       purchaseDatetime
@@ -603,7 +546,6 @@ export default function UploadScreen() {
       const response = await confirmTicket(selectedUri, {
         game_type: draft.gameType,
         draw_dates: drawDates,
-        draw_numbers: drawNumbers,
         purchase_datetime: purchaseDatetime || null,
         bet_type: normalizedBetType,
         numbers: submitNumbers,
@@ -962,92 +904,6 @@ export default function UploadScreen() {
             {getFieldSignal('drawDates').error && (
               <Text style={styles.fieldErrorText}>{getFieldSignal('drawDates').error}</Text>
             )}
-
-            <Text style={styles.inputLabel}>Draw Numbers (optional, one per line)</Text>
-            <TextInput
-              style={[
-                styles.input,
-                styles.drawNumbersInput,
-                getFieldSignal('drawNumbersText').showNeedsReview && styles.fieldNeedsReview,
-                getFieldSignal('drawNumbersText').error && styles.fieldErrorBorder,
-              ]}
-              value={draft.drawNumbersText}
-              onChangeText={(text) => {
-                markFieldTouched('drawNumbersText');
-                clearFieldError('drawNumbersText');
-                setDraft((prev) => (prev ? { ...prev, drawNumbersText: text } : prev));
-              }}
-              autoCapitalize="none"
-              multiline
-              placeholder="5447\n5448"
-              placeholderTextColor={Colors.textSecondary}
-            />
-            {parsedDrawNumbers.length > 0 && (
-              <View style={styles.dateChipsContainer}>
-                {parsedDrawNumbers.map((num, idx) => (
-                  <View key={`${num}-${idx}`} style={styles.dateChip}>
-                    <Text style={styles.dateChipText}>{num}</Text>
-                    <TouchableOpacity
-                      onPress={() => {
-                        markFieldTouched('drawNumbersText');
-                        clearFieldError('drawNumbersText');
-                        const updated = parsedDrawNumbers
-                          .filter((_, i) => i !== idx)
-                          .join('\n');
-                        setDraft((prev) => prev ? { ...prev, drawNumbersText: updated } : prev);
-                      }}
-                      hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-                    >
-                      <Text style={styles.dateChipRemove}>x</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            )}
-            {getFieldSignal('drawNumbersText').showAuto && <Text style={styles.fieldMetaAuto}>Auto-detected</Text>}
-            {getFieldSignal('drawNumbersText').showNeedsReview && <Text style={styles.fieldMetaWarn}>Needs review</Text>}
-            {getFieldSignal('drawNumbersText').error && (
-              <Text style={styles.fieldErrorText}>{getFieldSignal('drawNumbersText').error}</Text>
-            )}
-
-            <View style={styles.mappingBox}>
-              <Text style={styles.mappingTitle}>Date -&gt; Draw Number Mapping</Text>
-              {mappingPairs.length > 0 ? (
-                <>
-                  {mappingPairs.map((pair, idx) => {
-                    const isUnmatched = !pair.drawDate || !pair.drawNumber;
-                    return (
-                      <View
-                        key={`${pair.drawDate || 'nodate'}-${pair.drawNumber || 'nonum'}-${idx}`}
-                        style={[styles.mappingRow, isUnmatched && styles.mappingRowWarning]}
-                      >
-                        <Text style={[styles.mappingDate, !pair.drawDate && styles.mappingMissing]}>
-                          {pair.drawDate || '(no draw date)'}
-                        </Text>
-                        <Text style={styles.mappingArrow}>{'->'}</Text>
-                        <Text style={[styles.mappingNumber, !pair.drawNumber && styles.mappingMissing]}>
-                          {pair.drawNumber || '(no draw number)'}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                  {mappingPairs.some((p) => !p.drawDate) && (
-                    <Text style={styles.mappingHint}>
-                      Tap "+ Add Date" to fill in missing draw dates above.
-                    </Text>
-                  )}
-                  {mappingPairs.some((p) => !p.drawNumber) && (
-                    <Text style={styles.mappingHint}>
-                      Edit the Draw Numbers field to fill in missing draw numbers above.
-                    </Text>
-                  )}
-                </>
-              ) : (
-                <Text style={styles.mappingEmpty}>
-                  Add at least one draw date to preview mapping.
-                </Text>
-              )}
-            </View>
           </View>
 
           {draft.gameType === '4D' && (
@@ -1558,87 +1414,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: Typography.base,
   },
-  drawNumbersInput: {
-    minHeight: 72,
-    textAlignVertical: 'top',
-  },
-  dateOptionsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.xs,
-  },
-  dateOptionBtn: {
-    backgroundColor: Colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: Radius.full,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  dateOptionBtnActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  dateOptionText: {
-    fontSize: Typography.xs,
-    color: Colors.textSecondary,
-    fontWeight: '700',
-  },
-  dateOptionTextActive: {
-    color: '#fff',
-  },
-  mappingBox: {
-    backgroundColor: Colors.surfaceAlt,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: Spacing.sm,
-  },
-  mappingTitle: {
-    fontSize: Typography.xs,
-    color: Colors.textSecondary,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  mappingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  mappingDate: {
-    fontSize: Typography.sm,
-    color: Colors.text,
-    fontWeight: '600',
-    minWidth: 100,
-  },
-  mappingArrow: {
-    fontSize: Typography.sm,
-    color: Colors.textSecondary,
-    marginHorizontal: 8,
-  },
-  mappingNumber: {
-    fontSize: Typography.sm,
-    color: Colors.text,
-    fontWeight: '700',
-  },
   mappingEmpty: {
     fontSize: Typography.xs,
     color: Colors.textSecondary,
   },
-  mappingRowWarning: {
-    backgroundColor: Colors.warningBg,
-    borderRadius: Radius.sm,
-    paddingHorizontal: 6,
-  },
-  mappingMissing: {
-    color: Colors.warning,
-    fontStyle: 'italic',
-  },
-  mappingHint: {
+  fieldHint: {
     fontSize: Typography.xs,
-    color: Colors.warning,
+    color: Colors.textSecondary,
     marginTop: 6,
-    fontStyle: 'italic',
   },
   numbersInput: {
     minHeight: 120,
