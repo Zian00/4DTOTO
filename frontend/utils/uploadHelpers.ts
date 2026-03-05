@@ -231,9 +231,21 @@ export function toDraft(response: TicketPreviewResponse): OcrDraft {
   const primaryDrawDate = normalizeDateForEditor(response.draw_date);
   const drawDates = uniqueDrawOptions.length > 0 ? uniqueDrawOptions : [primaryDrawDate];
 
+  const drawNumbers: string[] = [];
+  const rawNumbers = response.draw_number_options ?? [];
+  for (const n of rawNumbers) {
+    const t = String(n ?? '').trim();
+    if (t && !drawNumbers.includes(t)) drawNumbers.push(t);
+  }
+  const primaryDrawNumber = String(response.draw_number ?? '').trim();
+  if (primaryDrawNumber && !drawNumbers.includes(primaryDrawNumber)) {
+    drawNumbers.unshift(primaryDrawNumber);
+  }
+
   return {
     gameType,
     drawDateOptions: drawDates,
+    drawNumberOptions: drawNumbers,
     purchaseDatetime: normalizeDateTimeForEditor(response.purchase_datetime),
     betType: normalizeBetType(gameType, response.bet_type ?? ''),
     numbersText: formatNumbersForEditor(response.numbers, gameType),

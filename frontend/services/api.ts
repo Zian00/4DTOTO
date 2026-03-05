@@ -50,7 +50,7 @@ export function getApiBaseUrl(): string {
 export interface TicketUploadResponse {
   id: string;
   purchase_group_id: string;
-  status: 'PENDING' | 'WON' | 'LOST';
+  status: 'PENDING' | 'WON' | 'LOST' | 'NO_RESULT';
   game_type: '4D' | 'TOTO';
   draw_date: string;
   purchase_datetime: string;
@@ -106,7 +106,8 @@ export interface TicketListItem {
   purchase_datetime: string;
   total_price: number | string;
   bet_label: string | null;
-  status: 'PENDING' | 'WON' | 'LOST';
+  numbers: string[];
+  status: 'PENDING' | 'WON' | 'LOST' | 'NO_RESULT';
   is_winner: boolean | null;
   prize_tier: string | null;
   image_url?: string | null;
@@ -146,7 +147,7 @@ export interface TicketDetail {
   draw_date: string;
   draw_number?: string | null;
   total_price: number | string;
-  status: 'PENDING' | 'WON' | 'LOST';
+  status: 'PENDING' | 'WON' | 'LOST' | 'NO_RESULT';
   created_at: string;
   updated_at: string;
   bet_label: string | null;

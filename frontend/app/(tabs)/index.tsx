@@ -252,9 +252,11 @@ export default function UploadScreen() {
     setUploadMsg('Confirming ticket and starting result checks...');
 
     try {
+      const drawNumbers = draft.drawNumberOptions.slice(0, drawDates.length);
       const response = await confirmTicket(selectedUri, {
         game_type: draft.gameType,
         draw_dates: drawDates,
+        draw_numbers: drawNumbers.length > 0 ? drawNumbers : null,
         purchase_datetime: purchaseDatetime || null,
         bet_type: normalizedBetType,
         numbers: submitNumbers,

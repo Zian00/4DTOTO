@@ -2,7 +2,7 @@
 Win/loss comparison logic for 4D and TOTO tickets.
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,6 +51,16 @@ async def check_ticket(ticket: Ticket, db: AsyncSession) -> None:
 
     results = await scrape_results(loaded_ticket.game_type.value, str(loaded_ticket.draw_date), db)
     if not results:
+        # If the draw date is more than 60 days ago and we still can't get results,
+        # mark the ticket as NO_RESULT so it doesn't stay PENDING forever.
+        if loaded_ticket.draw_date < date.today() - timedelta(days=60):
+            loaded_ticket.status = TicketStatus.NO_RESULT
+            message = (
+                f"Result data unavailable for {loaded_ticket.game_type.value} draw "
+                f"{loaded_ticket.draw_date.isoformat()} (historical data out of range)."
+            )
+            db.add(Notification(ticket_id=loaded_ticket.id, message=message))
+            await db.commit()
         return
 
     ticket_draw_number = _normalize_draw_number(loaded_ticket.draw_number)

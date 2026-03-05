@@ -2,7 +2,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { Colors, Radius, Typography } from '../constants/theme';
 
-type Status = 'PENDING' | 'WON' | 'LOST';
+type Status = 'PENDING' | 'WON' | 'LOST' | 'NO_RESULT';
 /** chip = compact (list rows), badge = larger (detail views) */
 type Variant = 'chip' | 'badge';
 
@@ -25,6 +25,11 @@ export function StatusChip({ status, variant = 'chip' }: Props) {
       bg = Colors.surfaceAlt;
       fg = Colors.textSecondary;
       label = 'No Prize';
+      break;
+    case 'NO_RESULT':
+      bg = Colors.surfaceAlt;
+      fg = Colors.textSecondary;
+      label = 'No Result';
       break;
     default: // PENDING
       bg = isChip ? Colors.warningBg : Colors.border;

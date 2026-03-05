@@ -25,7 +25,13 @@ export function TicketInfoCard({ ticket }: Props) {
   });
   const uploadedAt = new Date(ticket.purchase_datetime).toLocaleString('en-SG');
   const statusText =
-    ticket.status === 'WON' ? 'Won' : ticket.status === 'LOST' ? 'No Prize' : 'Pending';
+    ticket.status === 'WON'
+      ? 'Won'
+      : ticket.status === 'LOST'
+        ? 'No Prize'
+        : ticket.status === 'NO_RESULT'
+          ? 'No Result'
+          : 'Pending';
 
   return (
     <View style={styles.card}>

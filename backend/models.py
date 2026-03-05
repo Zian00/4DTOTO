@@ -33,6 +33,7 @@ class TicketStatus(str, enum.Enum):
     PENDING = "PENDING"
     WON = "WON"
     LOST = "LOST"
+    NO_RESULT = "NO_RESULT"
 
 
 class FourDBetType(str, enum.Enum):

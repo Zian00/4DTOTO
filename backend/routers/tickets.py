@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from database import get_db
-from models import GameType, Ticket, TicketStatus
+from models import DrawResult, GameType, Ticket, TicketStatus
 from schemas import (
     TicketConfirmBatchResponse,
     TicketDetail,
@@ -216,6 +216,23 @@ async def get_ticket(ticket_id: str, db: AsyncSession = Depends(get_db)):
         not_found("Ticket not found")
 
     needs_commit = False
+
+    # Backfill draw_number from DrawResult cache if it was never populated.
+    if not ticket.draw_number:
+        dr_row = (
+            await db.execute(
+                select(DrawResult).where(
+                    DrawResult.game_type == ticket.game_type.value,
+                    DrawResult.draw_date == ticket.draw_date,
+                )
+            )
+        ).scalar_one_or_none()
+        if dr_row:
+            raw_draw_no = str(dr_row.winning_numbers.get("draw_no") or "").strip()
+            if raw_draw_no:
+                ticket.draw_number = raw_draw_no
+                needs_commit = True
+
     for n in ticket.notifications:
         if not n.is_read:
             n.is_read = True

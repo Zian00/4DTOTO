@@ -4,6 +4,7 @@ export type GameType = '4D' | 'TOTO';
 export type OcrDraft = {
   gameType: GameType;
   drawDateOptions: string[];
+  drawNumberOptions: string[];
   purchaseDatetime: string;
   betType: string;
   numbersText: string;

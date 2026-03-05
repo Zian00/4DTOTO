@@ -62,6 +62,7 @@ export default function HistoryScreen() {
     const notifiedIds: string[] = stored ? JSON.parse(stored) : [];
     const newWins = items.filter((t) => t.status === 'WON' && !notifiedIds.includes(t.id));
     const newLosses = items.filter((t) => t.status === 'LOST' && !notifiedIds.includes(t.id));
+    const newNoResult = items.filter((t) => t.status === 'NO_RESULT' && !notifiedIds.includes(t.id));
     for (const t of newWins) {
       Toast.show({
         type: 'success',
@@ -73,7 +74,11 @@ export default function HistoryScreen() {
       Toast.show({ type: 'info', text1: `${newLosses.length} ticket(s) resolved with no prize.` });
       newLosses.forEach((t) => notifiedIds.push(t.id));
     }
-    if (newWins.length > 0 || newLosses.length > 0) {
+    if (newNoResult.length > 0) {
+      Toast.show({ type: 'info', text1: `${newNoResult.length} ticket(s) have no result data available.` });
+      newNoResult.forEach((t) => notifiedIds.push(t.id));
+    }
+    if (newWins.length > 0 || newLosses.length > 0 || newNoResult.length > 0) {
       await AsyncStorage.setItem(NOTIFIED_KEY, JSON.stringify(notifiedIds));
     }
   }
