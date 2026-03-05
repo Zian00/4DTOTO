@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from config import settings
 from models import (
     FourDTicket,
     GameType,
@@ -101,6 +102,9 @@ def extract_prize_tier(notifications: list[Notification]) -> str | None:
 
 def log_raw_ocr_text(raw_text: object, context: str) -> None:
     """Log OCR raw text to stdout, truncating if necessary."""
+    if not settings.log_ocr_raw_text:
+        print(f"[tickets] OCR raw text ({context}): <suppressed>")
+        return
     if raw_text is None:
         print(f"[tickets] OCR raw text ({context}): <empty>")
         return
@@ -124,13 +128,13 @@ async def create_ticket_batch(
     small_amount: str | None,
     purchase_dt: datetime | None,
     image_bytes: bytes,
-    content_type: str | None,
+    detected_mime: str,
     raw_ocr_text: str | None,
     db: AsyncSession,
 ) -> TicketConfirmBatchResponse:
     """Create all ticket ORM objects for a batch, persist them and trigger checking."""
     purchase_group_id = uuid.uuid4()
-    saved_image_filename = save_image(image_bytes, content_type, str(purchase_group_id))
+    saved_image_filename = save_image(image_bytes, detected_mime, str(purchase_group_id))
 
     created_tickets: list[Ticket] = []
 

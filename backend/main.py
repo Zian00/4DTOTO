@@ -2,7 +2,9 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
 from config import settings
@@ -53,12 +55,24 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="4D/TOTO API", version="1.0.0", lifespan=lifespan)
 
+cors_origins = settings.cors_origins_list
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins if cors_origins != ["*"] else ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=False,
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response: Response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    return response
 
 import os
 

@@ -6,7 +6,7 @@ import json
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -38,7 +38,8 @@ from utils.parsers import (
     parse_game_type,
     parse_purchase_datetime,
 )
-from utils.storage import build_image_url
+from utils.image_validation import validate_ticket_image
+from utils.storage import build_image_url, delete_image
 
 router = APIRouter()
 
@@ -50,6 +51,7 @@ async def upload_ticket(file: UploadFile = File(...)):
     image_bytes = await file.read()
     if len(image_bytes) > MAX_FILE_SIZE:
         payload_too_large("File too large (max 10 MB)")
+    validate_ticket_image(image_bytes, file.content_type)
 
     try:
         import traceback
@@ -126,6 +128,7 @@ async def confirm_ticket(
     image_bytes = await file.read()
     if len(image_bytes) > MAX_FILE_SIZE:
         payload_too_large("File too large (max 10 MB)")
+    detected_mime = validate_ticket_image(image_bytes, file.content_type)
 
     gt = parse_game_type(game_type)
     draw_dates = parse_draw_dates(draw_dates_json, draw_date)
@@ -149,7 +152,7 @@ async def confirm_ticket(
         small_amount=small_amount,
         purchase_dt=purchase_dt,
         image_bytes=image_bytes,
-        content_type=file.content_type,
+        detected_mime=detected_mime,
         raw_ocr_text=raw_ocr_text,
         db=db,
     )
@@ -273,6 +276,18 @@ async def delete_ticket(ticket_id: str, db: AsyncSession = Depends(get_db)):
     if not ticket:
         not_found("Ticket not found")
 
+    image_path = ticket.image_path
     await db.delete(ticket)
     await db.commit()
     remove_poll(str(ticket.id))
+
+    if image_path:
+        # Multiple tickets from one purchase batch share a single stored image.
+        remaining_stmt = (
+            select(func.count())
+            .select_from(Ticket)
+            .where(Ticket.image_path == image_path)
+        )
+        remaining = (await db.execute(remaining_stmt)).scalar() or 0
+        if remaining == 0:
+            delete_image(image_path)
