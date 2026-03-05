@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { Colors, Radius, Spacing, Typography } from '../../constants/theme';
 import { GameTag } from '../GameTag';
@@ -19,6 +19,9 @@ type Props = {
 };
 
 export function ModelCard({ prediction, modelIndex }: Props) {
+  const { width } = useWindowDimensions();
+  const isCompact = width < 420;
+  const ballSize = isCompact ? 36 : 44;
   const toto = prediction.toto_prediction;
   const accent = MODEL_COLORS[modelIndex] ?? Colors.primary;
   const accentLight = MODEL_LIGHT_COLORS[modelIndex] ?? Colors.infoBg;
@@ -61,7 +64,6 @@ export function ModelCard({ prediction, modelIndex }: Props) {
               </View>
             ))}
           </View>
-          <Text style={styles.fourDFull}>{prediction.four_d_prediction}</Text>
 
           <View style={[styles.methodNote, { backgroundColor: accentLight }]}>
             <Text style={[styles.methodNoteText, { color: accent }]}>
@@ -78,16 +80,16 @@ export function ModelCard({ prediction, modelIndex }: Props) {
           </View>
 
           <Text style={styles.groupLabel}>Primary Numbers</Text>
-          <View style={styles.ballsRow}>
+          <View style={isCompact ? styles.ballsRowCompact : styles.ballsRow}>
             {toto.primary.map((n) => (
-              <TotoBall key={n} number={n} variant="filled" color={accent} />
+              <TotoBall key={n} number={n} variant="filled" color={accent} size={ballSize} />
             ))}
           </View>
 
           <Text style={[styles.groupLabel, { marginTop: Spacing.md }]}>Supplementary Numbers</Text>
-          <View style={styles.ballsRow}>
+          <View style={isCompact ? styles.ballsRowCompact : styles.ballsRow}>
             {toto.supplementary.map((n) => (
-              <TotoBall key={n} number={n} variant="outline" color={accent} />
+              <TotoBall key={n} number={n} variant="outline" color={accent} size={ballSize} />
             ))}
           </View>
 
@@ -154,8 +156,8 @@ const styles = StyleSheet.create({
     marginVertical: Spacing.xs,
   },
   digitBox: {
-    width: 58,
-    height: 76,
+    width: 54,
+    height: 72,
     borderRadius: Radius.md,
     alignItems: 'center',
     justifyContent: 'center',
@@ -168,19 +170,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   digit: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '900',
     color: '#fff',
     fontFamily: 'monospace',
-    lineHeight: 32,
-  },
-  fourDFull: {
-    textAlign: 'center',
-    fontSize: Typography.xl,
-    fontWeight: '900',
-    color: Colors.text,
-    letterSpacing: 8,
-    marginBottom: Spacing.xs,
+    lineHeight: 30,
   },
   methodNote: { borderRadius: Radius.sm, paddingHorizontal: 10, paddingVertical: 8 },
   methodNoteText: { fontSize: Typography.xs, fontWeight: '600', lineHeight: 17 },
@@ -193,6 +187,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   ballsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  ballsRowCompact: { flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'space-between' },
 
   formatTag: {
     alignSelf: 'flex-start',

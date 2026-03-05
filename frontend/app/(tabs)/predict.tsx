@@ -78,7 +78,7 @@ export default function PredictScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <InfoBanner />
 
-      <View style={isWide ? styles.cardsGrid : null}>
+      <View style={isWide ? styles.cardsGrid : styles.cardsStack}>
         {predictions.map((p, i) => (
           <View key={p.model} style={isWide ? styles.gridItem : null}>
             <ModelCard prediction={p} modelIndex={i} />
@@ -122,6 +122,7 @@ const styles = StyleSheet.create({
   },
   infoBannerTitle: { fontSize: Typography.base, fontWeight: '800', color: Colors.info },
   infoBannerText: { fontSize: Typography.sm, color: '#1e40af', lineHeight: 20 },
+  cardsStack: { gap: Spacing.md },
   cardsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
   gridItem: { flex: 1, minWidth: 300 },
 });

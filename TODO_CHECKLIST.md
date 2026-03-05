@@ -48,19 +48,6 @@
 
 ---
 
-## Phase 4 — Automated Tests
-> `backend/tests/` is completely empty. Code quality is an evaluation criterion.
-
-- [ ] 4.1 Set up pytest + `httpx` async test client in `backend/tests/`
-- [ ] 4.2 Test ticket upload endpoint (mock OCR, check response shape)
-- [ ] 4.3 Test ticket confirm endpoint (4D and TOTO paths)
-- [ ] 4.4 Test 4D win/loss checker logic (`services/checker.py`)
-- [ ] 4.5 Test TOTO win/loss checker logic including system bet expansion
-- [ ] 4.6 Test results retrieval endpoint (cached and uncached)
-- [ ] 4.7 Test all 3 prediction endpoints
-
----
-
 ## Phase 5 — Deployment Config
 > No Dockerfile or docker-compose exists. A deployable build is a required deliverable.
 
