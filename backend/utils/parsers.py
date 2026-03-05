@@ -2,7 +2,7 @@
 Input parsing and normalisation helpers for lottery ticket data.
 
 Public functions are called by route handlers in routers/tickets.py.
-Private helpers (_prefix) are internal to this module.
+Private helpers (_prefix) may also be imported by utils/ocr_parsers.py.
 """
 
 import json
@@ -11,9 +11,8 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from fastapi import HTTPException
-
 from models import FourDBetType, GameType, TotoSystemType
+from utils.errors import bad_request
 
 
 # ── Game type ─────────────────────────────────────────────────────────────────
@@ -24,7 +23,7 @@ def parse_game_type(value: str) -> GameType:
         return GameType.FOUR_D
     if token == "TOTO":
         return GameType.TOTO
-    raise HTTPException(status_code=400, detail="game_type must be '4D' or 'TOTO'")
+    bad_request("game_type must be '4D' or 'TOTO'")
 
 
 # ── Draw dates ────────────────────────────────────────────────────────────────
@@ -36,24 +35,7 @@ def _parse_draw_date(value: str) -> date:
             return datetime.strptime(token, fmt).date()
         except ValueError:
             continue
-    raise HTTPException(status_code=400, detail="draw_date must be DD/MM/YYYY")
-
-
-def _parse_draw_date_options(raw: Any) -> list[date]:
-    if not isinstance(raw, list):
-        return []
-    out: list[date] = []
-    for item in raw:
-        token = str(item).strip()
-        if not token:
-            continue
-        try:
-            parsed = _parse_draw_date(token)
-        except HTTPException:
-            continue
-        if parsed not in out:
-            out.append(parsed)
-    return out
+    bad_request("draw_date must be DD/MM/YYYY")
 
 
 def parse_draw_dates(draw_dates_json: str | None, draw_date: str | None) -> list[date]:
@@ -62,19 +44,19 @@ def parse_draw_dates(draw_dates_json: str | None, draw_date: str | None) -> list
         try:
             parsed = json.loads(draw_dates_json)
         except json.JSONDecodeError:
-            raise HTTPException(status_code=400, detail="draw_dates_json must be valid JSON")
+            bad_request("draw_dates_json must be valid JSON")
         if isinstance(parsed, list):
             tokens.extend(str(v).strip() for v in parsed if str(v).strip())
         elif isinstance(parsed, str) and parsed.strip():
             tokens.append(parsed.strip())
         else:
-            raise HTTPException(status_code=400, detail="draw_dates_json must be an array of dates")
+            bad_request("draw_dates_json must be an array of dates")
 
     if draw_date and draw_date.strip():
         tokens.append(draw_date.strip())
 
     if not tokens:
-        raise HTTPException(status_code=400, detail="At least one draw date is required")
+        bad_request("At least one draw date is required")
 
     out: list[date] = []
     for token in tokens:
@@ -98,17 +80,6 @@ def _normalize_draw_number_token(raw: Any) -> str | None:
     return match.group(1)
 
 
-def _parse_draw_number_options(raw: Any) -> list[str]:
-    if not isinstance(raw, list):
-        return []
-    out: list[str] = []
-    for item in raw:
-        normalized = _normalize_draw_number_token(item)
-        if normalized and normalized not in out:
-            out.append(normalized)
-    return out
-
-
 def parse_draw_numbers(
     draw_numbers_json: str | None,
     draw_number: str | None,
@@ -119,16 +90,13 @@ def parse_draw_numbers(
         try:
             parsed = json.loads(draw_numbers_json)
         except json.JSONDecodeError:
-            raise HTTPException(status_code=400, detail="draw_numbers_json must be valid JSON")
+            bad_request("draw_numbers_json must be valid JSON")
         if isinstance(parsed, list):
             tokens.extend(str(v).strip() for v in parsed if str(v).strip())
         elif isinstance(parsed, str) and parsed.strip():
             tokens.append(parsed.strip())
         else:
-            raise HTTPException(
-                status_code=400,
-                detail="draw_numbers_json must be an array of draw numbers",
-            )
+            bad_request("draw_numbers_json must be an array of draw numbers")
 
     if draw_number and draw_number.strip():
         tokens.append(draw_number.strip())
@@ -143,10 +111,7 @@ def parse_draw_numbers(
         return [None] * len(draw_dates)
 
     if len(normalized) > len(draw_dates):
-        raise HTTPException(
-            status_code=400,
-            detail="draw numbers cannot exceed draw dates count",
-        )
+        bad_request("draw numbers cannot exceed draw dates count")
 
     if len(normalized) == 1 and len(draw_dates) > 1:
         return [normalized[0]] * len(draw_dates)
@@ -181,13 +146,13 @@ def extract_4d_numbers(numbers: list[list[str]]) -> list[str]:
                 if token not in tokens:
                     tokens.append(token)
     if not tokens:
-        raise HTTPException(status_code=400, detail="At least one valid 4-digit number is required")
+        bad_request("At least one valid 4-digit number is required")
     return tokens
 
 
 def extract_toto_sets(numbers: list[list[str]]) -> list[list[int]]:
     if not numbers:
-        raise HTTPException(status_code=400, detail="TOTO requires at least one number set")
+        bad_request("TOTO requires at least one number set")
 
     sets: list[list[int]] = []
     for idx, row in enumerate(numbers, start=1):
@@ -202,19 +167,13 @@ def extract_toto_sets(numbers: list[list[str]]) -> list[list[int]]:
 
         dedup_sorted = sorted(set(selected))
         if len(dedup_sorted) < 6:
-            raise HTTPException(
-                status_code=400,
-                detail=f"TOTO row {idx} must include at least 6 unique numbers (1-49)",
-            )
+            bad_request(f"TOTO row {idx} must include at least 6 unique numbers (1-49)")
         if len(dedup_sorted) > 12:
-            raise HTTPException(
-                status_code=400,
-                detail=f"TOTO row {idx} supports at most 12 unique numbers",
-            )
+            bad_request(f"TOTO row {idx} supports at most 12 unique numbers")
         sets.append(dedup_sorted)
 
     if not sets:
-        raise HTTPException(status_code=400, detail="No valid TOTO number set found")
+        bad_request("No valid TOTO number set found")
     return sets
 
 
@@ -267,10 +226,7 @@ def _normalize_toto_bet_type(raw: str | None, *, strict: bool) -> str:
         return system_type.value
 
     if strict:
-        raise HTTPException(
-            status_code=400,
-            detail="TOTO bet_type must be ORDINARY or SYSTEM_7 to SYSTEM_12",
-        )
+        bad_request("TOTO bet_type must be ORDINARY or SYSTEM_7 to SYSTEM_12")
     return "ORDINARY"
 
 
@@ -284,32 +240,23 @@ def parse_toto_mode(
             return False, None
         inferred = _system_enum_from_n(len(selected_numbers))
         if not inferred:
-            raise HTTPException(status_code=400, detail="System bet must have 7 to 12 unique numbers")
+            bad_request("System bet must have 7 to 12 unique numbers")
         return True, inferred
 
     normalized = _normalize_toto_bet_type(token, strict=True)
     if normalized == "ORDINARY":
         if len(selected_numbers) != 6:
-            raise HTTPException(
-                status_code=400,
-                detail="ORDINARY requires exactly 6 unique numbers",
-            )
+            bad_request("ORDINARY requires exactly 6 unique numbers")
         return False, None
 
     explicit_system = _parse_system_type(normalized)
     if explicit_system is None:
-        raise HTTPException(
-            status_code=400,
-            detail="TOTO bet_type must be ORDINARY or SYSTEM_7 to SYSTEM_12",
-        )
+        bad_request("TOTO bet_type must be ORDINARY or SYSTEM_7 to SYSTEM_12")
 
     system_n = len(selected_numbers)
     explicit_n = int(explicit_system.value.split("_")[1])
     if explicit_n != system_n:
-        raise HTTPException(
-            status_code=400,
-            detail=f"system_type {explicit_system.value} requires exactly {explicit_n} numbers",
-        )
+        bad_request(f"system_type {explicit_system.value} requires exactly {explicit_n} numbers")
     return True, explicit_system
 
 
@@ -322,22 +269,10 @@ def parse_decimal(raw: str | None, default: Decimal) -> Decimal:
     try:
         value = Decimal(token)
     except InvalidOperation:
-        raise HTTPException(status_code=400, detail=f"Invalid decimal value: {raw}")
+        bad_request(f"Invalid decimal value: {raw}")
     if value < 0:
-        raise HTTPException(status_code=400, detail=f"Decimal value cannot be negative: {raw}")
+        bad_request(f"Decimal value cannot be negative: {raw}")
     return value.quantize(Decimal("0.01"))
-
-
-def _normalize_amount_for_preview(raw: Any) -> str | None:
-    if raw is None:
-        return None
-    token = str(raw).strip()
-    if not token:
-        return None
-    try:
-        return f"{Decimal(token).quantize(Decimal('0.01'))}"
-    except (InvalidOperation, ValueError):
-        return None
 
 
 # ── Datetime ──────────────────────────────────────────────────────────────────
@@ -364,10 +299,7 @@ def parse_purchase_datetime(value: str | None) -> datetime | None:
             return datetime.strptime(token, fmt)
         except ValueError:
             continue
-    raise HTTPException(
-        status_code=400,
-        detail="purchase_datetime must be DD/MM/YYYY HH:MM AM/PM",
-    )
+    bad_request("purchase_datetime must be DD/MM/YYYY HH:MM AM/PM")
 
 
 # ── Formatting ────────────────────────────────────────────────────────────────
@@ -380,78 +312,3 @@ def format_purchase_datetime_for_preview(value: datetime | None) -> str | None:
     if value is None:
         return None
     return value.strftime("%d/%m/%Y %I:%M %p")
-
-
-# ── OCR output parsing ────────────────────────────────────────────────────────
-
-def parse_ocr_data(
-    ocr_data: dict[str, Any],
-) -> tuple[
-    str,
-    date,
-    list[date],
-    str | None,
-    list[str],
-    datetime | None,
-    str,
-    list[list[str]],
-    str,
-    str | None,
-    str | None,
-    str | None,
-]:
-    raw_game_type = str(ocr_data.get("game_type") or "4D").upper()
-    game_type = "TOTO" if raw_game_type == "TOTO" else "4D"
-
-    draw_date_token = str(ocr_data.get("draw_date") or date.today().isoformat())
-    try:
-        draw_date = _parse_draw_date(draw_date_token)
-    except HTTPException:
-        draw_date = date.today()
-
-    draw_date_options = _parse_draw_date_options(ocr_data.get("draw_dates"))
-    if draw_date not in draw_date_options:
-        draw_date_options.insert(0, draw_date)
-
-    draw_number = _normalize_draw_number_token(ocr_data.get("draw_number"))
-    draw_number_options = _parse_draw_number_options(ocr_data.get("draw_numbers"))
-    if draw_number and draw_number not in draw_number_options:
-        draw_number_options.insert(0, draw_number)
-    if not draw_number and draw_number_options:
-        draw_number = draw_number_options[0]
-
-    try:
-        purchase_datetime = parse_purchase_datetime(
-            str(ocr_data.get("purchase_datetime") or "").strip() or None
-        )
-    except HTTPException:
-        purchase_datetime = None
-
-    bet_type_raw = str(ocr_data.get("bet_type") or "").strip()
-    if game_type == "TOTO":
-        bet_type = _normalize_toto_bet_type(bet_type_raw, strict=False)
-    elif bet_type_raw:
-        bet_type = bet_type_raw
-    else:
-        bet_type = "ORDINARY"
-
-    numbers = normalize_numbers(ocr_data.get("numbers"))
-    raw_text = str(ocr_data.get("raw_text") or "")
-    big_amount = _normalize_amount_for_preview(ocr_data.get("big_amount"))
-    small_amount = _normalize_amount_for_preview(ocr_data.get("small_amount"))
-    total_price = _normalize_amount_for_preview(ocr_data.get("total_price"))
-
-    return (
-        game_type,
-        draw_date,
-        draw_date_options,
-        draw_number,
-        draw_number_options,
-        purchase_datetime,
-        bet_type,
-        numbers,
-        raw_text,
-        big_amount,
-        small_amount,
-        total_price,
-    )

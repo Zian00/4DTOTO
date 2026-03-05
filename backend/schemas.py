@@ -59,6 +59,7 @@ class TicketListItem(BaseModel):
     total_price: Decimal
     status: TicketStatus
     bet_label: str | None = None
+    numbers: list[str] = Field(default_factory=list)
     is_winner: bool | None = None
     prize_tier: str | None = None
     image_url: str | None = None
