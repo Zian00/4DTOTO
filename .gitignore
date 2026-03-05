@@ -7,7 +7,8 @@ backend/**/__pycache__/
 backend/*.pyc
 backend/**/*.pyc
 backend/.env
-backend/uploads/
+backend/uploads/*
+!backend/uploads/.gitkeep
 
 # Anaconda / venv
 backend/venv/
