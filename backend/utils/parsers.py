@@ -85,6 +85,36 @@ def parse_draw_numbers(
     draw_number: str | None,
     draw_dates: list[date],
 ) -> list[str | None]:
+    if draw_numbers_json:
+        try:
+            parsed = json.loads(draw_numbers_json)
+        except json.JSONDecodeError:
+            bad_request("draw_numbers_json must be valid JSON")
+
+        if isinstance(parsed, list):
+            if len(parsed) > len(draw_dates):
+                bad_request("draw numbers cannot exceed draw dates count")
+
+            aligned: list[str | None] = []
+            for item in parsed:
+                aligned.append(_normalize_draw_number_token(item))
+
+            if len(aligned) < len(draw_dates):
+                aligned.extend([None] * (len(draw_dates) - len(aligned)))
+
+            if any(v is not None for v in aligned):
+                return aligned
+        elif isinstance(parsed, str) and parsed.strip():
+            # Backward-compat: single draw number string payload.
+            token = _normalize_draw_number_token(parsed.strip())
+            if token:
+                if len(draw_dates) > 1:
+                    return [token] * len(draw_dates)
+                return [token]
+            return [None] * len(draw_dates)
+        else:
+            bad_request("draw_numbers_json must be an array of draw numbers")
+
     tokens: list[str] = []
     if draw_numbers_json:
         try:
@@ -93,10 +123,6 @@ def parse_draw_numbers(
             bad_request("draw_numbers_json must be valid JSON")
         if isinstance(parsed, list):
             tokens.extend(str(v).strip() for v in parsed if str(v).strip())
-        elif isinstance(parsed, str) and parsed.strip():
-            tokens.append(parsed.strip())
-        else:
-            bad_request("draw_numbers_json must be an array of draw numbers")
 
     if draw_number and draw_number.strip():
         tokens.append(draw_number.strip())

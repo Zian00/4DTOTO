@@ -12,6 +12,7 @@ type Props = {
 };
 
 export function TicketInfoCard({ ticket }: Props) {
+  const isOutOfRange = ticket.status === 'NO_RESULT';
   const drawDateShort = new Date(ticket.draw_date).toLocaleDateString('en-SG', {
     day: '2-digit',
     month: 'short',
@@ -41,8 +42,10 @@ export function TicketInfoCard({ ticket }: Props) {
       </View>
 
       {ticket.prize_tier && (
-        <View style={styles.prizeStrip}>
-          <Text style={styles.prizeStripText}>{`Prize Tier: ${ticket.prize_tier}`}</Text>
+        <View style={[styles.prizeStrip, isOutOfRange ? styles.prizeStripMuted : null]}>
+          <Text style={[styles.prizeStripText, isOutOfRange ? styles.prizeStripTextMuted : null]}>
+            {`Prize Tier: ${ticket.prize_tier}`}
+          </Text>
         </View>
       )}
 
@@ -84,6 +87,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   prizeStripText: { color: Colors.win, fontSize: Typography.sm, fontWeight: '700' },
+  prizeStripMuted: { backgroundColor: Colors.border },
+  prizeStripTextMuted: { color: Colors.textSecondary },
   metricGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

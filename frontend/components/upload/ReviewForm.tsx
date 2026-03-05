@@ -166,6 +166,7 @@ export function ReviewForm({
   }
 
   const betType = normalizeBetType(draft.gameType, draft.betType);
+  const validEnteredNumbers = numberPreviewRows.filter((row) => row.isValid).map((row) => row.text);
 
   return (
     <>
@@ -352,11 +353,14 @@ export function ReviewForm({
                       onUpdateDraft((prev) => ({
                         ...prev,
                         drawDateOptions: prev.drawDateOptions.filter((d) => d !== opt),
+                        drawNumberByDate: Object.fromEntries(
+                          Object.entries(prev.drawNumberByDate).filter(([key]) => key !== opt),
+                        ),
                       }));
                     }}
                     hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
                   >
-                    <Text style={styles.chipRemove}>×</Text>
+                    <Text style={styles.chipRemove}>x</Text>
                   </TouchableOpacity>
                 </View>
               ))}
@@ -364,6 +368,33 @@ export function ReviewForm({
                 <Text style={styles.addDateBtnText}>+ Add Date</Text>
               </TouchableOpacity>
             </View>
+            {draft.drawDateOptions.length > 0 && (
+              <View style={styles.mappingBox}>
+                <Text style={styles.mappingTitle}>Mapping Preview (Draw Date -&gt; Numbers)</Text>
+                {draft.drawDateOptions.map((dateOpt) => (
+                  <View key={`map-${dateOpt}`} style={styles.mappingRow}>
+                    <View style={styles.mappingDateCol}>
+                      <Text style={styles.mappingDateLabel}>Draw Date</Text>
+                      <Text style={styles.mappingDate}>{dateOpt}</Text>
+                    </View>
+                    <View style={styles.mappingNumbersCol}>
+                      <Text style={styles.mappingDateLabel}>Numbers</Text>
+                      {validEnteredNumbers.length > 0 ? (
+                        <View style={styles.mappingNumbers}>
+                          {validEnteredNumbers.map((num, idx) => (
+                            <View key={`${dateOpt}-${num}-${idx}`} style={styles.mappingChip}>
+                              <Text style={styles.mappingChipText}>{num}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      ) : (
+                        <Text style={styles.mappingEmpty}>No valid numbers entered yet.</Text>
+                      )}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
             {getFieldSignal('drawDates').error && (
               <Text style={styles.errorText}>{getFieldSignal('drawDates').error}</Text>
             )}
@@ -659,6 +690,51 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   addDateBtnText: { fontSize: Typography.sm, color: Colors.primary, fontWeight: '700' },
+  mappingBox: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.surface,
+    padding: Spacing.sm,
+    gap: Spacing.xs,
+  },
+  mappingTitle: { fontSize: Typography.sm, color: Colors.text, fontWeight: '700' },
+  mappingRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.sm,
+    padding: Spacing.sm,
+    gap: Spacing.xs,
+    backgroundColor: Colors.surfaceAlt,
+  },
+  mappingDateCol: { width: 112, gap: 2 },
+  mappingNumbersCol: {
+    flex: 1,
+    minWidth: 0,
+    paddingLeft: Spacing.sm,
+    borderLeftWidth: 1,
+    borderLeftColor: Colors.border,
+    gap: Spacing.xs,
+  },
+  mappingDateLabel: {
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  mappingDate: { fontSize: Typography.lg, color: Colors.text, fontWeight: '800' },
+  mappingNumbers: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },
+  mappingChip: {
+    borderRadius: Radius.full,
+    backgroundColor: Colors.infoBg,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  mappingChipText: { fontSize: Typography.sm, color: Colors.info, fontWeight: '800' },
+  mappingEmpty: { fontSize: Typography.xs, color: Colors.textSecondary },
 
   amountRow: { flexDirection: 'row', gap: Spacing.sm },
   amountCol: { flex: 1 },

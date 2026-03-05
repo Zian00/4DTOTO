@@ -5,6 +5,7 @@ export type OcrDraft = {
   gameType: GameType;
   drawDateOptions: string[];
   drawNumberOptions: string[];
+  drawNumberByDate: Record<string, string>;
   purchaseDatetime: string;
   betType: string;
   numbersText: string;

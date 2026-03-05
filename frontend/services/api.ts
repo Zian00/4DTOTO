@@ -95,7 +95,7 @@ export interface TicketPreviewResponse {
 export interface TicketConfirmPayload {
   game_type: string;
   draw_dates: string[];
-  draw_numbers?: string[] | null;
+  draw_numbers?: (string | null)[] | null;
   purchase_datetime?: string | null;
   bet_type?: string | null;
   numbers: string[][];

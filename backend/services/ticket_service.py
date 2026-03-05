@@ -18,6 +18,7 @@ from sqlalchemy.orm import selectinload
 
 from config import settings
 from models import (
+    DrawResult,
     FourDTicket,
     GameType,
     Notification,
@@ -30,6 +31,7 @@ from models import (
 from schemas import TicketConfirmBatchResponse
 from utils.errors import bad_request
 from utils.parsers import (
+    _normalize_draw_number_token,
     extract_4d_numbers,
     extract_toto_sets,
     parse_4d_bet_type,
@@ -135,6 +137,27 @@ async def create_ticket_batch(
     """Create all ticket ORM objects for a batch, persist them and trigger checking."""
     purchase_group_id = uuid.uuid4()
     saved_image_filename = save_image(image_bytes, detected_mime, str(purchase_group_id))
+    resolved_draw_numbers = list(draw_numbers)
+    if len(resolved_draw_numbers) < len(draw_dates):
+        resolved_draw_numbers.extend([None] * (len(draw_dates) - len(resolved_draw_numbers)))
+
+    # If draw number is missing, backfill from cached official results for that date.
+    for idx, d in enumerate(draw_dates):
+        if resolved_draw_numbers[idx]:
+            continue
+        winning_numbers = (
+            await db.execute(
+                select(DrawResult.winning_numbers).where(
+                    DrawResult.game_type == gt.value,
+                    DrawResult.draw_date == d,
+                )
+            )
+        ).scalar_one_or_none()
+        if not isinstance(winning_numbers, dict):
+            continue
+        normalized = _normalize_draw_number_token(winning_numbers.get("draw_no"))
+        if normalized:
+            resolved_draw_numbers[idx] = normalized
 
     created_tickets: list[Ticket] = []
 
@@ -150,7 +173,7 @@ async def create_ticket_batch(
             small = Decimal("1.00")
 
         for idx, d in enumerate(draw_dates):
-            draw_no = draw_numbers[idx] if idx < len(draw_numbers) else None
+            draw_no = resolved_draw_numbers[idx] if idx < len(resolved_draw_numbers) else None
             for number in four_d_numbers:
                 ticket = Ticket(
                     purchase_group_id=purchase_group_id,
@@ -175,7 +198,7 @@ async def create_ticket_batch(
             bad_request(f"Too many ticket entries generated. Max {MAX_CREATED_TICKETS}.")
 
         for idx, d in enumerate(draw_dates):
-            draw_no = draw_numbers[idx] if idx < len(draw_numbers) else None
+            draw_no = resolved_draw_numbers[idx] if idx < len(resolved_draw_numbers) else None
             for selected in toto_sets:
                 is_system, system_type = parse_toto_mode(selected, bet_type)
                 total_price = Decimal(str(len(list(combinations(sorted(selected), 6)))))
