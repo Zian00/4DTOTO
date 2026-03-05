@@ -1,10 +1,10 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { Colors, Radius, Spacing, Typography } from '../../constants/theme';
 import { formatDrawDate } from '../../utils/format';
 import { GameTag } from '../GameTag';
 import { StatusChip } from '../StatusChip';
-import type { TicketListItem } from '../../services/api';
+import { resolveImageUrl, type TicketListItem } from '../../services/api';
 
 type Props = {
   item: TicketListItem;
@@ -54,7 +54,11 @@ export function TicketCard({ item, onPress }: Props) {
         ) : null}
       </View>
 
-      <Text style={styles.chevron}>›</Text>
+      {item.image_url ? (
+        <Image source={{ uri: resolveImageUrl(item.image_url) ?? undefined }} style={styles.thumbnail} resizeMode="cover" />
+      ) : (
+        <Text style={styles.chevron}>›</Text>
+      )}
     </TouchableOpacity>
   );
 }
@@ -119,5 +123,12 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     paddingRight: 12,
     opacity: 0.4,
+  },
+  thumbnail: {
+    width: 56,
+    height: 56,
+    borderRadius: Radius.sm,
+    margin: 10,
+    alignSelf: 'center',
   },
 });

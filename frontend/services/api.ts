@@ -47,6 +47,13 @@ export function getApiBaseUrl(): string {
   return API_URL;
 }
 
+/** Resolve a relative image path (e.g. "/uploads/foo.jpg") to a full URL. */
+export function resolveImageUrl(imageUrl: string | null | undefined): string | null {
+  if (!imageUrl) return null;
+  if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) return imageUrl;
+  return `${API_URL}${imageUrl}`;
+}
+
 export interface TicketUploadResponse {
   id: string;
   purchase_group_id: string;
