@@ -6,7 +6,8 @@
 
 The app has four tabs: **Upload**, **History**, **Results**, and **Predict**.
 
-> 📸 **Screenshot:** *[Bottom navigation bar showing the four tabs: Upload, History, Results, Predict]*
+<img src="images/nav-tabs.jpg" alt="Bottom navigation bar showing the four tabs: Upload, History, Results, Predict" width="600">
+
 
 ---
 
@@ -18,7 +19,7 @@ The Upload tab is where you scan a physical lottery ticket to start tracking its
 
 On first load the Upload tab shows two buttons: **Take Photo** and **Pick from Gallery**.
 
-> 📸 **Screenshot:** *[Upload tab showing "Take Photo" and "Pick from Gallery" buttons]*
+<img src="images/upload-buttons.jpg" alt="Upload tab showing Take Photo and Pick from Gallery buttons" width="600">
 
 - **Take Photo** — opens your device camera. Point at your ticket and capture it.
 - **Pick from Gallery** — opens your photo library to choose an existing ticket photo.
@@ -29,7 +30,7 @@ On first load the Upload tab shows two buttons: **Take Photo** and **Pick from G
 
 After selecting, the image is displayed with three buttons below it: **Retake**, **Change**, and **Clear**.
 
-> 📸 **Screenshot:** *[Image preview showing a TOTO ticket with Retake/Change/Clear buttons below it]*
+<img src="images/image-preview.jpg" alt="Image preview showing a ticket with Retake, Change and Clear buttons" width="600">
 
 - **Retake** — opens the camera again to take a new photo
 - **Change** — opens the gallery to pick a different image
@@ -41,13 +42,13 @@ Press **Read Ticket** to send the image to the backend for OCR processing.
 
 A loading indicator is shown while the image is processed. This typically takes 5–20 seconds depending on Gemini API response time.
 
-> 📸 **Screenshot:** *[Upload screen with spinner and "Uploading and reading ticket..." message]*
+<img src="images/ocr-loading.jpg" alt="Upload screen with spinner and uploading message" width="600">
 
 ### Step 4 — Review and correct OCR results
 
 After OCR completes, a review form is shown with the extracted fields pre-filled. Fields with lower OCR confidence are highlighted in amber.
 
-> 📸 **Screenshot:** *[Review form showing game type, draw date, bet type, and numbers fields, with confidence indicators]*
+<img src="images/review-form.jpg" alt="Review form showing game type, draw date, bet type, and numbers fields" width="600">
 
 **Fields to review:**
 
@@ -69,7 +70,7 @@ Edit any field that looks incorrect before confirming.
 
 Once satisfied with the fields, press **Confirm Ticket**. A summary shows how many ticket entries were created and their initial result status.
 
-> 📸 **Screenshot:** *[Success screen: "Ticket Saved! 2 ticket entries created. 2 pending."]*
+<img src="images/success-screen.jpg" alt="Success screen showing ticket saved confirmation" width="600">
 
 The ticket is now saved and result-checking begins automatically.
 
@@ -79,7 +80,7 @@ The ticket is now saved and result-checking begins automatically.
 
 The **History** tab lists all your saved tickets.
 
-> 📸 **Screenshot:** *[History tab showing a list of ticket cards with game type, draw date, status badge, and thumbnail]*
+<img src="images/history-list.jpg" alt="History tab showing ticket cards with status badges and thumbnails" width="600">
 
 ### Reading a ticket card
 
@@ -98,19 +99,18 @@ Use the **Sort** and **Filter** controls at the top to narrow the list:
 - Sort by: **Newest** or **Winning first**
 - Filter by: **All**, **4D only**, **TOTO only**, **System bets**, or **Winners only**
 
-> 📸 **Screenshot:** *[History tab with filter/sort controls visible and "Winners only" filter active]*
+<img src="images/history-filter.jpg" alt="History tab with filter controls and Winners only filter active" width="600">
 
 ### Win/loss notifications
 
 When a result becomes available for a pending ticket, a toast notification appears the next time the History tab is open. Winning tickets also show a prominent prize tier badge.
 
-> 📸 **Screenshot:** *[Toast notification: "Your TOTO ticket won! Starter Prize"]*
-
 ### Viewing ticket details
 
 Tap any ticket card to open the **Ticket Detail** screen.
 
-> 📸 **Screenshot:** *[Ticket Detail screen showing full ticket image, all fields, expanded TOTO combinations, and win/loss result]*
+<img src="images/ticket-detail.jpg" alt="Ticket Detail screen showing full ticket image, fields, and win/loss result" width="600">
+
 
 The detail screen shows:
 - Full ticket image
@@ -125,7 +125,7 @@ The detail screen shows:
 
 The **Results** tab shows all cached Singapore Pools draw results.
 
-> 📸 **Screenshot:** *[Results tab showing a list of draw result cards for 4D and TOTO]*
+<img src="images/results-tab.jpg" alt="Results tab showing draw result cards for 4D and TOTO" width="600">
 
 ### Browsing results
 
@@ -133,7 +133,7 @@ Results are paginated. Use the **Load More** button to fetch older draws.
 
 Use the **4D / TOTO** toggle at the top to filter by game type.
 
-> 📸 **Screenshot:** *[Results tab filtered to TOTO, showing draw date, draw number, and winning numbers]*
+<img src="images/results-toto.jpg" alt="Results tab filtered to TOTO showing draw date, number, and winning numbers" width="600">
 
 ### Reading a 4D result
 
@@ -161,7 +161,7 @@ Each TOTO result card shows:
 
 The **Predict** tab shows number suggestions generated by three statistical models.
 
-> 📸 **Screenshot:** *[Predict tab showing three model cards: Frequency Analysis, Hot/Cold Analysis, Recency-Weighted Frequency]*
+<img src="images/predict-tab.jpg" alt="Predict tab showing three model cards" width="600">
 
 > ⚠️ **Important:** These are statistical summaries of historical data — not predictions. Lottery draws are random. Past results have zero influence on future draws. See [Section 7 — Prediction Models Guide](07-predictions-guide.md) for full methodology.
 
@@ -174,7 +174,7 @@ Each card shows:
 - **Data points** — how many historical draws were used
 - **Disclaimer**
 
-> 📸 **Screenshot:** *[Expanded Frequency Analysis card showing 4D number "3847" and TOTO System 12 numbers: Primary [3, 7, 14, 21, 34, 45], Supplementary [2, 9, 18, 27, 38, 49]]*
+<img src="images/predict-expanded.jpg" alt="Expanded Frequency Analysis card showing 4D number and TOTO System 12 numbers" width="600">
 
 ### Three models
 

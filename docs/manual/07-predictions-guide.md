@@ -28,7 +28,7 @@ The Predict tab displays output from **three independent models**. Each model an
 
 ## Reading a Prediction Card
 
-> 📸 **Screenshot:** *[Prediction card showing model name, 4D prediction "3847", TOTO System 12 prediction with primary [3,7,14,21,34,45] and supplementary [2,9,18,27,38,49], data_points: 1820]*
+<img src="images/predict-tab.jpg" alt="Predict tab showing three model cards" width="600">
 
 Each card shows:
 

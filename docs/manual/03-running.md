@@ -109,7 +109,8 @@ npx expo start
 
 4. The app loads on your device. Any code changes you save are reflected immediately (hot reload).
 
-> 📸 **Screenshot:** *[4DTOTO app running on an Android phone — Upload tab visible]*
+<img src="images/app-upload-tab.jpg" alt="4DTOTO app running on Android phone — Upload tab" width="300">
+
 
 ### Troubleshooting mobile connection
 

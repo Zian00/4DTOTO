@@ -75,6 +75,10 @@ export default function TicketDetailScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <TouchableOpacity style={styles.backBtn} onPress={() => router.push('/(tabs)/history')}>
+        <Text style={styles.backBtnText}>← Back to History</Text>
+      </TouchableOpacity>
+
       {imageUri && <TicketImageViewer imageUri={imageUri} />}
 
       <TicketInfoCard ticket={ticket} />
@@ -107,4 +111,6 @@ const styles = StyleSheet.create({
     marginTop: Spacing.md,
   },
   deleteBtnText: { color: '#fff', fontWeight: '700', fontSize: Typography.base },
+  backBtn: { marginBottom: Spacing.md },
+  backBtnText: { color: Colors.primary, fontSize: Typography.base, fontWeight: '600' },
 });
