@@ -279,9 +279,8 @@ export default function UploadScreen() {
       Toast.show({ type: 'success', text1: 'Ticket confirmed.' });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Confirmation failed';
-      setUploadState('error');
-      setUploadMsg(msg);
-      Toast.show({ type: 'error', text1: 'Could not confirm ticket.' });
+      setUploadState('review');
+      Toast.show({ type: 'error', text1: msg.length < 90 ? msg : 'Could not confirm ticket. Please try again.' });
     }
   }
 
@@ -345,7 +344,7 @@ export default function UploadScreen() {
         <View style={[styles.statusBox, styles.statusError]}>
           <Text style={styles.statusIcon}>⚠️</Text>
           <Text style={styles.statusText}>{uploadMsg}</Text>
-          <TouchableOpacity style={styles.newUploadBtn} onPress={reset}>
+          <TouchableOpacity style={styles.newUploadBtn} onPress={handleUpload}>
             <Text style={styles.newUploadBtnText}>Try Again</Text>
           </TouchableOpacity>
         </View>

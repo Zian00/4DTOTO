@@ -65,9 +65,10 @@ Examples:
 """
 
 
-MODEL_NAME = "gemini-3-flash-preview"
+MODEL_NAME = "gemini-2.5-flash"
 # gemini-2.5-flash
 # gemini-2.5-flash-lite
+# gemini-3-flash-preview
 
 _GEMINI_URL = (
     f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent"

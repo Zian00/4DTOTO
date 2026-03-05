@@ -209,15 +209,22 @@ export interface PredictionResponse {
   disclaimer: string;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, timeoutMs = 60000): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   const url = `${API_URL}${path}`;
   let res: Response;
   try {
-    res = await fetch(url, init);
+    res = await fetch(url, { ...init, signal: controller.signal });
   } catch (error) {
+    clearTimeout(timer);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Request timed out. Please check your connection and try again.');
+    }
     const msg = error instanceof Error ? error.message : 'Network request failed';
     throw new Error(`Cannot reach API (${API_URL}). ${msg}`);
   }
+  clearTimeout(timer);
 
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as Record<string, string>;
