@@ -1,9 +1,11 @@
 import { Platform, useWindowDimensions } from 'react-native';
-import { Slot, Tabs } from 'expo-router';
+import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Colors } from '../../constants/theme';
 import { NAV_ITEMS, WebSidebarLayout } from '../../components/navigation/WebSidebarLayout';
+import { NotificationBell } from '../../components/NotificationBell';
+import { useNotifications } from '../../context/NotificationContext';
 
 const WIDE_BREAKPOINT = 860;
 
@@ -20,6 +22,7 @@ function TabIcon({ name, focused, color }: { name: string; focused: boolean; col
 export default function TabLayout() {
   const { width } = useWindowDimensions();
   const isWide = Platform.OS === 'web' && width >= WIDE_BREAKPOINT;
+  const { refresh: refreshNotifications } = useNotifications();
 
   if (isWide) {
     return <WebSidebarLayout />;
@@ -27,6 +30,7 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      screenListeners={{ focus: () => { void refreshNotifications(); } }}
       screenOptions={{
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.textSecondary,
@@ -46,6 +50,7 @@ export default function TabLayout() {
         headerStyle: { backgroundColor: Colors.primary },
         headerTintColor: '#fff',
         headerTitleStyle: { fontWeight: '700' },
+        headerRight: () => <NotificationBell />,
       }}
     >
       <Tabs.Screen

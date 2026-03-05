@@ -92,6 +92,16 @@ class NotificationOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class NotificationListItem(BaseModel):
+    id: UUID
+    ticket_id: UUID
+    message: str
+    is_read: bool
+    created_at: datetime
+    game_type: GameType
+    draw_date: date
+
+
 class TicketDetail(BaseModel):
     id: UUID
     purchase_group_id: UUID

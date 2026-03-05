@@ -29,7 +29,7 @@ export default function ResultsScreen() {
   const [total, setTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  async function load(gt: GameType, pg: number, append = false) {
+  async function load(gt: GameType, pg: number, append = false, isManualRefresh = false) {
     if (pg === 1) setLoading(true);
     else setLoadingMore(true);
     try {
@@ -39,6 +39,9 @@ export default function ResultsScreen() {
         setResults((prev) => [...prev, ...data.items]);
       } else {
         setResults(data.items);
+      }
+      if (isManualRefresh && pg === 1 && data.items.length > 0) {
+        Toast.show({ type: 'info', text1: 'Results updated' });
       }
     } catch {
       Toast.show({ type: 'error', text1: 'Could not load results' });
@@ -116,7 +119,7 @@ export default function ResultsScreen() {
           showsVerticalScrollIndicator={false}
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.2}
-          onRefresh={() => { setPage(1); void load(gameType, 1); }}
+          onRefresh={() => { setPage(1); void load(gameType, 1, false, true); }}
           refreshing={loading}
           ListFooterComponent={
             loadingMore ? (

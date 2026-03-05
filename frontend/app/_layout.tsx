@@ -6,6 +6,7 @@ import Toast from 'react-native-toast-message';
 import { Colors } from '../constants/theme';
 import { getNickname, setNickname } from '../utils/deviceId';
 import { WelcomeModal } from '../components/WelcomeModal';
+import { NotificationProvider } from '../context/NotificationContext';
 
 export default function RootLayout() {
   const [showWelcome, setShowWelcome] = useState(false);
@@ -28,6 +29,7 @@ export default function RootLayout() {
   }
 
   return (
+    <NotificationProvider>
     <>
       <Stack
         screenOptions={{
@@ -58,5 +60,6 @@ export default function RootLayout() {
         />
       )}
     </>
+    </NotificationProvider>
   );
 }

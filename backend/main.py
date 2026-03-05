@@ -65,11 +65,12 @@ import os
 os.makedirs(settings.upload_dir, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
 
-from routers import predictions, results, tickets
+from routers import notifications, predictions, results, tickets
 
 app.include_router(tickets.router, prefix="/api/tickets", tags=["tickets"])
 app.include_router(results.router, prefix="/api/results", tags=["results"])
 app.include_router(predictions.router, prefix="/api/predictions", tags=["predictions"])
+app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
 
 
 @app.get("/health")

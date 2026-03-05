@@ -1,8 +1,11 @@
+import { useEffect } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Slot, usePathname, useRouter } from 'expo-router';
 
 import { Colors, Radius, Spacing, Typography } from '../../constants/theme';
+import { NotificationBell } from '../NotificationBell';
+import { useNotifications } from '../../context/NotificationContext';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -22,10 +25,15 @@ export const NAV_ITEMS: {
 export function WebSidebarLayout() {
   const pathname = usePathname();
   const router = useRouter();
+  const { refresh: refreshNotifications } = useNotifications();
   const activeItem = NAV_ITEMS.find((i) =>
     i.href === '/' ? pathname === '/' : pathname.startsWith(i.href),
   );
   const pageTitle = activeItem?.label ?? '4D / TOTO';
+
+  useEffect(() => {
+    void refreshNotifications();
+  }, [pathname]);
 
   return (
     <View style={styles.root}>
@@ -74,6 +82,7 @@ export function WebSidebarLayout() {
       <View style={styles.main}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>{pageTitle}</Text>
+          <NotificationBell tintColor={Colors.text} />
         </View>
         <View style={styles.content}>
           <Slot />
@@ -145,7 +154,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
     paddingHorizontal: Spacing.lg,
-    justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   headerTitle: { fontSize: Typography.lg, fontWeight: '700', color: Colors.text },
   content: { flex: 1 },

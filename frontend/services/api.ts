@@ -146,6 +146,16 @@ export interface NotificationOut {
   created_at: string;
 }
 
+export interface NotificationListItem {
+  id: string;
+  ticket_id: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+  game_type: '4D' | 'TOTO';
+  draw_date: string;
+}
+
 export interface TicketDetail {
   id: string;
   purchase_group_id: string;
@@ -305,4 +315,12 @@ export async function getResult(
 
 export async function getPredictions(): Promise<PredictionResponse[]> {
   return request<PredictionResponse[]>('/api/predictions');
+}
+
+export async function listNotifications(): Promise<NotificationListItem[]> {
+  return request<NotificationListItem[]>('/api/notifications');
+}
+
+export async function markNotificationRead(id: string): Promise<NotificationListItem> {
+  return request<NotificationListItem>(`/api/notifications/${id}/read`, { method: 'PATCH' });
 }
