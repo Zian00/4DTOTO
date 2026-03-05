@@ -19,7 +19,6 @@ import { TicketInfoCard } from '../../components/ticket/TicketInfoCard';
 import { FourDDetails } from '../../components/ticket/FourDDetails';
 import { TotoDetails } from '../../components/ticket/TotoDetails';
 import { ExpandedCombos } from '../../components/ticket/ExpandedCombos';
-import { NotificationsList } from '../../components/ticket/NotificationsList';
 import { RawOcrSection } from '../../components/ticket/RawOcrSection';
 
 export default function TicketDetailScreen() {
@@ -85,8 +84,6 @@ export default function TicketDetailScreen() {
       <TotoDetails ticket={ticket} />
 
       <ExpandedCombos ticket={ticket} />
-
-      <NotificationsList ticket={ticket} />
 
       <RawOcrSection rawText={ticket.raw_ocr_text} />
 
