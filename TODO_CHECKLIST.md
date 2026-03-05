@@ -51,11 +51,11 @@
 ## Phase 5 — Deployment Config
 > No Dockerfile or docker-compose exists. A deployable build is a required deliverable.
 
-- [ ] 5.1 Write `backend/Dockerfile`
-- [ ] 5.2 Write `docker-compose.yml` at root (backend + PostgreSQL + optional frontend)
-- [ ] 5.3 Add `.env.example` file with all required environment variables documented
-- [ ] 5.4 Verify `expo export --platform web` produces a working static web build
-- [ ] 5.5 Add build/run commands to README
+- [x] 5.1 Write `backend/Dockerfile`
+- [x] 5.2 Write `docker-compose.yml` at root (backend + PostgreSQL + optional frontend)
+- [x] 5.3 Add `.env.example` file with all required environment variables documented
+- [x] 5.4 Verify `expo export --platform web` produces a working static web build
+- [x] 5.5 Add build/run commands to README
 
 ---
 
