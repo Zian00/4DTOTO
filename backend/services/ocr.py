@@ -65,20 +65,24 @@ Examples:
 """
 
 
-MODEL_NAME = "gemini-2.5-flash"
-# gemini-2.5-flash
-# gemini-2.5-flash-lite
-# gemini-3-flash-preview
+_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-3-flash-preview",
+]
 
-_GEMINI_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent"
-)
+_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+
+
+def _gemini_url(model: str) -> str:
+    return f"{_GEMINI_BASE}/{model}:generateContent"
 
 
 async def extract_ticket(image_bytes: bytes, mime_type: str | None = None) -> dict[str, Any]:
     """
-    Send ticket image to Gemini 2.5 Flash and return structured OCR data.
-    Raises ValueError if the response cannot be parsed as valid JSON.
+    Send ticket image to Gemini and return structured OCR data.
+    Tries each model in _MODELS in order, falling back on quota/availability errors.
+    Raises ValueError if all models fail or the response cannot be parsed as valid JSON.
     """
     image_mime = mime_type or "image/jpeg"
     if not settings.gemini_api_key:
@@ -104,11 +108,31 @@ async def extract_ticket(image_bytes: bytes, mime_type: str | None = None) -> di
         },
     }
 
+    last_error: Exception | None = None
+
     # Ignore broken proxy/SSL env vars (e.g. invalid SSL_CERT_FILE) from host env.
     async with httpx.AsyncClient(timeout=45, trust_env=False) as client:
-        resp = await client.post(_GEMINI_URL, params={"key": settings.gemini_api_key}, json=body)
-        resp.raise_for_status()
-        data = resp.json()
+        for model in _MODELS:
+            try:
+                resp = await client.post(
+                    _gemini_url(model),
+                    params={"key": settings.gemini_api_key},
+                    json=body,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                print(f"[ocr] used model: {model}")
+                break
+            except httpx.HTTPStatusError as exc:
+                print(f"[ocr] {model} failed ({exc.response.status_code}), trying next model")
+                last_error = exc
+                continue
+            except httpx.RequestError as exc:
+                print(f"[ocr] {model} request error: {exc}, trying next model")
+                last_error = exc
+                continue
+        else:
+            raise ValueError(f"All Gemini models failed. Last error: {last_error}")
 
     text = _extract_response_text(data)
     if not text:
